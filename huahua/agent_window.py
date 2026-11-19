@@ -529,6 +529,7 @@ class AgentWindow(QWidget):
         self._finalized = False
         self._minimized = False
         self._last_pet_state = ""
+        self._task_token = 0
         self._pending_choice: dict[str, Any] | None = None
         self._header_drag: QPoint | None = None
         self._header_origin: QPoint | None = None
@@ -967,6 +968,8 @@ class AgentWindow(QWidget):
         self._run.set_status("正在启动 MothX…", PEACH_DEEP)
         self._busy = True
         self._finalized = False
+        self._task_token += 1
+        self._last_pet_state = ""
         self._pending_choice = None
         self.choice_resolved.emit()
         self.send_btn.setEnabled(False)
@@ -1099,6 +1102,13 @@ class AgentWindow(QWidget):
         self.stop_btn.hide()
         self.status_label.setText("● 执行引擎")
         self.status_label.setStyleSheet(f"color:{TEAL_DEEP};font-size:10px;")
+
+    def _schedule_pet_idle(self):
+        token = self._task_token
+        def settle():
+            if token == self._task_token and not self.is_task_running:
+                self._pet("idle")
+        QTimer.singleShot(1800, settle)
 
     def _pet(self, state: str):
         if state != self._last_pet_state:
@@ -1240,7 +1250,7 @@ class AgentWindow(QWidget):
             self.notify_requested.emit(
                 "任务完成", f"点我看看{theme.character_name(self.character)}做了什么", "", "agent"
             )
-            QTimer.singleShot(1800, lambda: self._pet("idle"))
+            self._schedule_pet_idle()
         self._finalized = True
         self._scroll_bottom()
 
@@ -1262,7 +1272,7 @@ class AgentWindow(QWidget):
         self._pet("failure")
         self._finalized = True
         self.notify_requested.emit("任务没跑通", message[:50], "", "agent")
-        QTimer.singleShot(1800, lambda: self._pet("idle"))
+        self._schedule_pet_idle()
         self._scroll_bottom()
 
     def _scroll_bottom(self):

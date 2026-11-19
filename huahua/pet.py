@@ -370,6 +370,10 @@ class PetWindow(QWidget):
 
     def set_state(self, state: str, revert_ms: int | None = None):
         """Public state switch used by the app (thinking/success/failure...)."""
+        # A running task owns the pet state.  A late greeting, hover, sleep or
+        # notification must not replace the thinking sprite.
+        if self._busy and state not in ("thinking", "tool", "waiting", "success", "failure", "idle"):
+            return
         if state in ("thinking", "tool", "waiting"):
             self._busy = True
         elif state in ("success", "failure"):

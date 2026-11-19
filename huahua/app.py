@@ -394,9 +394,16 @@ class HuaHuaApp(QObject):
                 title, subtitle, icon=icon, payload=payload,
                 kind="确认" if approval else "完成", duration=9000 if approval else 7200,
             )
-            if not approval and self.pet.state not in ("sleep",):
+            if (
+                not approval
+                and not self.agent.is_task_running
+                and self.pet.state not in ("sleep",)
+            ):
                 self.pet.set_state("success", 1700)
-                QTimer.singleShot(1800, lambda: self.pet.set_state("idle"))
+                QTimer.singleShot(
+                    1800,
+                    lambda: None if self.agent.is_task_running else self.pet.set_state("idle"),
+                )
 
     # ------------------------------------------------------------------
     def open_settings(self):
