@@ -172,6 +172,8 @@ powershell -ExecutionPolicy Bypass -File .\打包EXE.ps1
 
 会生成 `dist\华华.exe`，并复制一份到项目根目录。单文件打包首次启动会解压到临时目录，通常需要几秒。
 
+> Agent 执行模式需要把 `runtime\mothx.exe` 和 `华华.exe` 放在同一层目录。打包脚本不会把 MothX 运行时塞进单文件；移动程序时请把 `runtime` 文件夹一起带走。
+
 ## 常见问题
 
 **Q：怎么从华华换成熙熙？**  

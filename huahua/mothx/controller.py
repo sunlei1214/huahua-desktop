@@ -89,7 +89,11 @@ class AgentController(QObject):
             )
             return
         try:
-            self.runtime.prepare(key, self.config.active_profile().get("chat_model", ""))
+            self.runtime.prepare(
+                key,
+                self.config.active_profile().get("chat_model", ""),
+                self.config.active_profile().get("base_url", ""),
+            )
             self.runtime.probe(key)
         except Exception as e:
             self._fail_init(str(e))

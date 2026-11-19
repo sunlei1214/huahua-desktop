@@ -69,7 +69,7 @@ class MothXRuntime:
     def settings_path(self) -> Path:
         return self.config_dir / "settings.json"
 
-    def prepare(self, key: str, default_model: str = "") -> None:
+    def prepare(self, key: str, default_model: str = "", base_url: str = "") -> None:
         """Write app-local MothX settings, never touching the user's global config."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         settings = {
@@ -79,7 +79,7 @@ class MothXRuntime:
             "defaultThinkingLevel": "off",
             "providers": {
                 "moark": {
-                    "baseUrl": "https://api.moark.com/v1",
+                    "baseUrl": (base_url or "https://api.moark.com/v1").rstrip("/"),
                     "apiKey": "${MOARK_API_KEY}",
                     "api": "openai-chat",
                     "models": [{k: v for k, v in m.items() if k != "badges"} for m in self.models],

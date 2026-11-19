@@ -645,6 +645,9 @@ class AgentWindow(QWidget):
 
     def apply_config(self):
         self.apply_character()
+        if not self._busy:
+            # Pick up a new API key / runtime path on the next task.
+            self.controller.shutdown()
         self.reload_runtime()
 
     # ------------------------------------------------------------------
@@ -742,6 +745,7 @@ class AgentWindow(QWidget):
         self.controller.cancel()
         if self._run:
             self._run.finish("已停止", MUTED)
+        self._finalized = True
         self._end_busy("idle")
         self.pet_state.emit("idle")
 
@@ -755,6 +759,7 @@ class AgentWindow(QWidget):
                 self.tl.removeWidget(w)
                 w.deleteLater()
         self._run = None
+        self._finalized = True
         self.empty.show()
         self._end_busy("idle")
         self.pet_state.emit("idle")
