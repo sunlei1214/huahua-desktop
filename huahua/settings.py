@@ -176,7 +176,11 @@ class SettingsDialog(QDialog):
         self._drag_origin: QPoint | None = None
         self._saved = False
 
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("华华和熙熙 · 设置")
         self.setWindowIcon(QIcon(str(theme.character_icon_path(config.character))))

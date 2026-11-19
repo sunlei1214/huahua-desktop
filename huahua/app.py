@@ -408,8 +408,19 @@ class HuaHuaApp(QObject):
         self.settings_dialog = dlg
         dlg.saved.connect(self._settings_saved)
         dlg.clear_history_requested.connect(self._clear_history)
+        self._hide_task_bubbles()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        QTimer.singleShot(0, lambda: (dlg.raise_(), dlg.activateWindow()))
         dlg.exec()
         self.settings_dialog = None
+        if self.agent.is_minimized():
+            self._agent_minimized(True)
+        elif self.agent.isVisible():
+            self.agent.show_panel()
+        elif self.chat.isVisible():
+            self.chat.show_panel()
 
     def _settings_saved(self):
         old_character = self.pet.character
