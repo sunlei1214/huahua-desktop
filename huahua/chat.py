@@ -262,7 +262,12 @@ class ChatWindow(QWidget):
         title_col.addWidget(self.status_label)
         hl.addLayout(title_col, 1)
 
-        self.agent_btn = IconButton("sparkle", "打开执行任务", 30)
+        self.agent_btn = QPushButton("执行")
+        self.agent_btn.setObjectName("Ghost")
+        self.agent_btn.setFixedSize(46, 30)
+        self.agent_btn.setFont(font(9, QFont.Weight.DemiBold))
+        self.agent_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.agent_btn.setToolTip("切换到执行任务（MothX Agent）")
         self.agent_btn.clicked.connect(self.agent_requested.emit)
         self.new_btn = IconButton("plus", "新对话", 30)
         self.new_btn.clicked.connect(self.new_chat)

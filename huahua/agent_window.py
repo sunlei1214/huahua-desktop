@@ -57,6 +57,16 @@ from .widgets import (
     md_to_html,
 )
 
+DEFAULT_WORKSPACE_NAME = "桌面工作区"
+
+
+def workspace_path(raw: str | None = None) -> Path:
+    """The one canonical path used by both the header and MothX session/new."""
+    p = Path(raw).expanduser() if raw else Path.home() / DEFAULT_WORKSPACE_NAME
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    return p.resolve()
+
 
 # ----------------------------------------------------------------------
 class ToolRow(QFrame):
@@ -335,6 +345,7 @@ class AgentWindow(QWidget):
     pet_state = Signal(str)
     notify_requested = Signal(str, str, str, str)
     settings_requested = Signal()
+    chat_requested = Signal()
     hidden = Signal()
 
     def __init__(self, config: Config):
@@ -404,6 +415,13 @@ class AgentWindow(QWidget):
         self.status_label.setStyleSheet(f"color:{TEAL_DEEP};font-size:10px;")
         col.addWidget(self.status_label)
         hl.addLayout(col, 1)
+        self.session_btn = QPushButton("会话")
+        self.session_btn.setObjectName("Ghost")
+        self.session_btn.setFixedSize(48, 30)
+        self.session_btn.setToolTip("回到聊天 / 生图 / 视频")
+        self.session_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.session_btn.clicked.connect(self.chat_requested.emit)
+        hl.addWidget(self.session_btn)
         self.new_btn = IconButton("plus", "新任务", 30)
         self.new_btn.clicked.connect(self.new_task)
         self.settings_btn = IconButton("settings", "设置", 30)
@@ -412,32 +430,45 @@ class AgentWindow(QWidget):
         self.min_btn.clicked.connect(self.hide)
         self.close_btn = IconButton("close", "收起", 30)
         self.close_btn.clicked.connect(self.hide)
-        for b in (self.new_btn, self.settings_btn, self.min_btn, self.close_btn):
+        for b in (self.session_btn, self.new_btn, self.settings_btn, self.min_btn, self.close_btn):
             hl.addWidget(b)
         root.addWidget(header)
         self._header = header
 
         # context bar
         ctx_wrap = QWidget()
-        cl = QHBoxLayout(ctx_wrap)
+        cl = QVBoxLayout(ctx_wrap)
         cl.setContentsMargins(18, 0, 18, 9)
-        cl.setSpacing(6)
+        cl.setSpacing(5)
         self.workspace_btn = QPushButton("工作区 · 未选择")
         self.workspace_btn.setObjectName("Chip")
         self.workspace_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.workspace_btn.setToolTip("点击更改工作区（只在这个文件夹内读写）")
         self.workspace_btn.clicked.connect(self.choose_workspace)
-        cl.addWidget(self.workspace_btn, 1)
+        cl.addWidget(self.workspace_btn)
+        row = QHBoxLayout()
+        row.setSpacing(6)
         self.model_combo = QComboBox()
-        self.model_combo.setFixedWidth(205)
+        self.model_combo.setMinimumWidth(220)
         self.model_combo.setToolTip("MothX 模型")
         self.model_combo.currentIndexChanged.connect(self._model_changed)
-        cl.addWidget(self.model_combo)
+        row.addWidget(self.model_combo, 1)
+        mode_label = QLabel("模式")
+        mode_label.setObjectName("Tiny")
+        row.addWidget(mode_label)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("执行", "agent")
-        self.mode_combo.addItem("只读计划", "plan")
-        self.mode_combo.setFixedWidth(84)
+        self.mode_combo.addItem("执行（逐次审批）", "agent")
+        self.mode_combo.addItem("计划（只读）", "plan")
+        self.mode_combo.addItem("YOLO（完全放开）", "yolo")
+        self.mode_combo.setFixedWidth(150)
+        self.mode_combo.setToolTip("执行：逐次审批；只读计划：不改文件；YOLO：完全放开，不推荐")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
-        cl.addWidget(self.mode_combo)
+        self._last_mode = "agent"
+        row.addWidget(self.mode_combo)
+        arrow = QLabel("▾")
+        arrow.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        row.addWidget(arrow)
+        cl.addLayout(row)
         root.addWidget(ctx_wrap)
 
         # timeline
@@ -478,7 +509,7 @@ class AgentWindow(QWidget):
         ccl.addWidget(self.attach_host)
         self.edit = QPlainTextEdit()
         self.edit.setObjectName("Composer")
-        self.edit.setPlaceholderText("让华华做什么？比如：读一下这个项目，找出 3 个可改进的地方…")
+        self.edit.setPlaceholderText(f"让{theme.character_name(self.character)}做什么？比如：读一下这个项目，找出 3 个可改进的地方…")
         self.edit.setFixedHeight(52)
         self.edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.edit.installEventFilter(self)
@@ -532,15 +563,15 @@ class AgentWindow(QWidget):
         self.empty_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_art.setFixedHeight(150)
         lay.addWidget(self.empty_art)
-        t = QLabel("让华华帮你干点活")
-        t.setObjectName("Title")
-        t.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(t)
-        s = QLabel("她会读文件、查资料、改代码、跑测试；每一步都先经过你。")
-        s.setObjectName("Hint")
-        s.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        s.setWordWrap(True)
-        lay.addWidget(s)
+        self.empty_title = QLabel()
+        self.empty_title.setObjectName("Title")
+        self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.empty_title)
+        self.empty_sub = QLabel()
+        self.empty_sub.setObjectName("Hint")
+        self.empty_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_sub.setWordWrap(True)
+        lay.addWidget(self.empty_sub)
         for text in (
             "读一下这个项目，告诉我它是做什么的",
             "找出 3 个可以改进的地方，先不要改代码",
@@ -576,25 +607,27 @@ class AgentWindow(QWidget):
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
         for m in self.runtime.models:
-            self.model_combo.addItem(f"{m['name']}  ·  {m['id']}", m["id"])
+            self.model_combo.addItem(str(m.get("name") or m["id"]), m["id"])
+            self.model_combo.setItemData(self.model_combo.count() - 1, str(m["id"]), Qt.ItemDataRole.ToolTipRole)
         wanted = str(self.config.get("mothx.model", "") or self.config.active_profile().get("chat_model", ""))
         idx = self.model_combo.findData(wanted)
         if idx >= 0:
             self.model_combo.setCurrentIndex(idx)
         self.model_combo.blockSignals(False)
         mode = str(self.config.get("mothx.mode", "agent") or "agent")
+        self.mode_combo.blockSignals(True)
         midx = self.mode_combo.findData(mode)
         if midx >= 0:
             self.mode_combo.setCurrentIndex(midx)
+        self.mode_combo.blockSignals(False)
+        self._last_mode = str(self.mode_combo.currentData() or "agent")
         self._refresh_workspace()
 
     def _refresh_workspace(self):
         raw = str(self.config.get("mothx.workspace", "") or "").strip()
-        if not raw:
-            raw = str(Path.home() / "华华工作区")
-        p = Path(raw)
-        self.workspace_btn.setText(f"工作区 · {p.name or p}")
-        self.workspace_btn.setToolTip(str(p))
+        p = workspace_path(raw or None)
+        self.workspace_btn.setText(f"工作区 · {p}")
+        self.workspace_btn.setToolTip(f"{p}\n点击更改（只在这个文件夹内读写）")
         self.empty_art.setPixmap(
             theme.pixmap("idle", self.character).scaled(
                 150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
@@ -603,7 +636,7 @@ class AgentWindow(QWidget):
 
     def _workspace(self) -> Path:
         raw = str(self.config.get("mothx.workspace", "") or "").strip()
-        p = Path(raw) if raw else Path.home() / "华华工作区"
+        p = workspace_path(raw or None)
         p.mkdir(parents=True, exist_ok=True)
         if str(p) != str(self.config.get("mothx.workspace", "")):
             self.config.set("mothx.workspace", str(p))
@@ -613,9 +646,9 @@ class AgentWindow(QWidget):
 
     def choose_workspace(self):
         start = str(self._workspace())
-        d = QFileDialog.getExistingDirectory(self, "选择华华的工作区", start)
+        d = QFileDialog.getExistingDirectory(self, "选择工作区", start)
         if d:
-            self.config.set("mothx.workspace", d)
+            self.config.set("mothx.workspace", str(workspace_path(d)))
             self.config.save()
             self.controller.new_task()
             self._refresh_workspace()
@@ -627,9 +660,25 @@ class AgentWindow(QWidget):
             self.controller.set_model(str(model))
 
     def _mode_changed(self, _idx: int):
-        mode = self.mode_combo.currentData()
-        if mode:
-            self.controller.set_mode(str(mode))
+        mode = str(self.mode_combo.currentData() or "agent")
+        if mode == "yolo" and self._last_mode != "yolo":
+            answer = QMessageBox.warning(
+                self,
+                "开启 YOLO 模式？",
+                f"YOLO 会让{theme.character_name(self.character)}直接读写文件、运行命令，不再逐次询问。\n"
+                "只在你完全信任这个工作区时使用。",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.mode_combo.blockSignals(True)
+                idx = self.mode_combo.findData(self._last_mode)
+                self.mode_combo.setCurrentIndex(max(0, idx))
+                self.mode_combo.blockSignals(False)
+                return
+        self._last_mode = mode
+        self.controller.set_mode(mode)
+        self.pet_state.emit("waiting" if mode == "plan" else "tool")
 
     # ------------------------------------------------------------------
     def apply_character(self):
@@ -639,6 +688,9 @@ class AgentWindow(QWidget):
         self.name_label.setText(name)
         self.setWindowTitle(f"{name} · 执行")
         self.setWindowIcon(QIcon(str(theme.character_icon_path(self.character))))
+        self.empty_title.setText(f"让{name}帮你干点活")
+        self.empty_sub.setText(f"{name}会读文件、查资料、改代码、跑测试；每一步都先经过你。")
+        self.edit.setPlaceholderText(f"让{name}做什么？比如：读一下这个项目，找出 3 个可改进的地方…")
         for run in self.findChildren(AgentRunView):
             run.set_character(self.character, name)
         self._refresh_workspace()
@@ -653,7 +705,7 @@ class AgentWindow(QWidget):
     # ------------------------------------------------------------------
     def send(self):
         if self._busy:
-            self.show_toast("华华还在执行，先等一下或点停止")
+            self.show_toast(f"{theme.character_name(self.character)}还在执行，先等一下或点停止")
             return
         text = self.edit.toPlainText().strip()
         if not text:
@@ -836,19 +888,19 @@ class AgentWindow(QWidget):
         self._run.add_approval(data, decide)
         self._scroll_bottom()
         self.pet_state.emit("waiting")
-        self.notify_requested.emit("需要你确认", str(data.get("title") or "华华想执行一个操作"), "", "agent-approval")
+        self.notify_requested.emit("需要你确认", str(data.get("title") or f"{theme.character_name(self.character)}想执行一个操作"), "", "agent-approval")
 
     def _on_question(self, data: dict[str, Any]):
-        question = data.get("question") or "华华想确认一下"
+        question = data.get("question") or f"{theme.character_name(self.character)}想确认一下"
         options = data.get("options") or []
         answer = ""
         if options:
             labels = [o["label"] for o in options]
-            choice, ok = QInputDialog.getItem(self, "华华在问你", question, labels, 0, False)
+            choice, ok = QInputDialog.getItem(self, f"{theme.character_name(self.character)}在问你", question, labels, 0, False)
             if ok and choice:
                 answer = next((o["id"] for o in options if o["label"] == choice), choice)
         else:
-            answer, ok = QInputDialog.getText(self, "华华在问你", question)
+            answer, ok = QInputDialog.getText(self, f"{theme.character_name(self.character)}在问你", question)
             if not ok:
                 answer = ""
         self.controller.answer_question(data.get("request_id"), answer)
@@ -867,7 +919,9 @@ class AgentWindow(QWidget):
         self._end_busy()
         self.pet_state.emit("success" if reason != "cancelled" else "idle")
         if reason != "cancelled":
-            self.notify_requested.emit("任务完成", "点我看看华华做了什么", "", "agent")
+            self.notify_requested.emit(
+                "任务完成", f"点我看看{theme.character_name(self.character)}做了什么", "", "agent"
+            )
             QTimer.singleShot(1800, lambda: self.pet_state.emit("idle"))
         self._finalized = True
         self._scroll_bottom()
@@ -951,7 +1005,7 @@ class AgentWindow(QWidget):
             e.acceptProposedAction()
             self.attachments = [Path(p) for p in paths if Path(p).is_file()][:6]
             self._rebuild_attachments()
-            self.show_toast("文件已放进任务，发送时会一起交给华华")
+            self.show_toast(f"文件已放进任务，发送时会一起交给{theme.character_name(self.character)}")
 
     def shutdown(self):
         self.controller.shutdown()

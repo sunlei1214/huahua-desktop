@@ -150,6 +150,7 @@ class AgentController(QObject):
         if not cwd:
             callback(None, "还没有选择工作区。")
             return
+        cwd = str(Path(cwd).expanduser().resolve())
         Path(cwd).mkdir(parents=True, exist_ok=True)
 
         def start(error: str):

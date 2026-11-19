@@ -76,6 +76,7 @@ class HuaHuaApp(QObject):
         self.agent.pet_state.connect(self._pet_state)
         self.agent.notify_requested.connect(self._notify)
         self.agent.settings_requested.connect(self.open_settings)
+        self.agent.chat_requested.connect(lambda: self.open_chat())
 
     @property
     def character(self) -> str:
@@ -131,7 +132,7 @@ class HuaHuaApp(QObject):
         menu.setStyleSheet(theme.qss())
         a = menu.addAction(f"打开{self.character_name}")
         a.triggered.connect(lambda: self.open_chat())
-        a = menu.addAction("让华华干活…")
+        a = menu.addAction(f"让{self.character_name}干活…")
         a.triggered.connect(self.open_agent)
         a = menu.addAction("画一张图")
         a.triggered.connect(lambda: self.open_chat("image"))

@@ -659,7 +659,7 @@ class PetWindow(QWidget):
         )
         a = menu.addAction("和我聊聊")
         a.triggered.connect(self.chat_requested.emit)
-        a = menu.addAction("让华华干活…")
+        a = menu.addAction(f"让{theme.character_name(self.character)}干活…")
         a.triggered.connect(self.agent_requested.emit)
         a = menu.addAction("画一张图")
         a.triggered.connect(lambda: self.mode_requested.emit("image"))

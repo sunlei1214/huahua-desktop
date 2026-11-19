@@ -504,7 +504,7 @@ class SettingsDialog(QDialog):
         wh.setContentsMargins(0, 0, 0, 0)
         wh.setSpacing(6)
         self.workspace_edit = QLineEdit()
-        self.workspace_edit.setPlaceholderText("默认：用户目录\\华华工作区")
+        self.workspace_edit.setPlaceholderText("默认：用户目录\\桌面工作区")
         wh.addWidget(self.workspace_edit, 1)
         wb = QPushButton("选择…")
         wb.setObjectName("Ghost")
@@ -1033,7 +1033,13 @@ class SettingsDialog(QDialog):
 
         m = self.draft.setdefault("mothx", {})
         m["runtime_path"] = self.runtime_path.text().strip()
-        m["workspace"] = self.workspace_edit.text().strip()
+        raw_ws = self.workspace_edit.text().strip()
+        if raw_ws:
+            p = Path(raw_ws).expanduser()
+            if not p.is_absolute():
+                p = Path.cwd() / p
+            raw_ws = str(p.resolve())
+        m["workspace"] = raw_ws
 
         s = self.draft["storage"]
         s["output_dir"] = self.output_dir.text().strip() or str(default_output_dir())
