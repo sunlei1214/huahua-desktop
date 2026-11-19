@@ -52,6 +52,7 @@ from .widgets import (
     AttachmentChip,
     Avatar,
     Chip,
+    DropOverlay,
     FlowLayout,
     IconButton,
     NoWheelTextBrowser,
@@ -69,6 +70,46 @@ def workspace_path(raw: str | None = None) -> Path:
     if not p.is_absolute():
         p = Path.cwd() / p
     return p.resolve()
+
+
+# ----------------------------------------------------------------------
+class AgentComposerEdit(QPlainTextEdit):
+    """Composer that treats dropped files as task attachments, not text."""
+
+    files_dropped = Signal(list)
+    drop_state = Signal(bool)
+
+    def _paths(self, event) -> list[str]:
+        if not event.mimeData().hasUrls():
+            return []
+        return [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+
+    def dragEnterEvent(self, event):
+        paths = self._paths(event)
+        if paths:
+            self.drop_state.emit(True)
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if self._paths(event):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self.drop_state.emit(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        paths = self._paths(event)
+        self.drop_state.emit(False)
+        if paths:
+            self.files_dropped.emit(paths)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
 
 
 # ----------------------------------------------------------------------
@@ -377,6 +418,7 @@ class AgentWindow(QWidget):
         self.setWindowIcon(QIcon(str(theme.character_icon_path(self.character))))
         self._build()
         self._connect()
+        self.drop_overlay = DropOverlay(self)
         self.reload_runtime()
         self.apply_character()
 
@@ -514,12 +556,11 @@ class AgentWindow(QWidget):
         ccl.setContentsMargins(11, 8, 9, 7)
         ccl.setSpacing(4)
         self.attach_host = QWidget()
-        self.attach_layout = QHBoxLayout(self.attach_host)
-        self.attach_layout.setContentsMargins(1, 0, 1, 2)
-        self.attach_layout.setSpacing(5)
+        self.attach_host.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.attach_layout = FlowLayout(self.attach_host, margin=3, spacing=5)
         self.attach_host.hide()
         ccl.addWidget(self.attach_host)
-        self.edit = QPlainTextEdit()
+        self.edit = AgentComposerEdit()
         self.edit.setObjectName("Composer")
         self.edit.setPlaceholderText(f"让{theme.character_name(self.character)}做什么？比如：读一下这个项目，找出 3 个可改进的地方…")
         self.edit.setFixedHeight(52)
@@ -533,7 +574,7 @@ class AgentWindow(QWidget):
         self.attach_btn = IconButton("attach", "添加文件", 30)
         self.attach_btn.clicked.connect(self.pick_files)
         bottom.addWidget(self.attach_btn)
-        self.hint = QLabel("MothX · 工具 · 多模型")
+        self.hint = QLabel("附件可拖入 · 命令会先问")
         self.hint.setObjectName("Tiny")
         bottom.addWidget(self.hint)
         bottom.addStretch(1)
@@ -551,7 +592,7 @@ class AgentWindow(QWidget):
         bottom.addWidget(self.send_btn)
         ccl.addLayout(bottom)
         cl2.addWidget(self.composer)
-        tip = QLabel("Enter 发送 · Shift + Enter 换行 · 所有写文件和命令都会先问你")
+        tip = QLabel("Enter 发送 · Shift + Enter 换行 · 附件可直接拖进来")
         tip.setObjectName("Tiny")
         tip.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cl2.addWidget(tip)
@@ -614,6 +655,10 @@ class AgentWindow(QWidget):
         c.run_finished.connect(self._on_run_finished)
         c.failed.connect(self._on_failed)
         c.session_ready.connect(lambda _r: self._refresh_workspace())
+        self.edit.files_dropped.connect(self._add_paths)
+        self.edit.drop_state.connect(
+            lambda active: self._show_drop_overlay() if active else self._hide_drop_overlay()
+        )
 
     # ------------------------------------------------------------------
     def reload_runtime(self):
@@ -784,8 +829,7 @@ class AgentWindow(QWidget):
             "支持的文件 (*.png *.jpg *.jpeg *.webp *.pdf *.docx *.pptx *.xlsx *.txt *.md *.csv *.json *.py *.ts *.tsx);;所有文件 (*.*)",
         )
         if files:
-            self.attachments = [Path(x) for x in files if Path(x).is_file()][:6]
-            self._rebuild_attachments()
+            self._add_paths(files)
 
     def _rebuild_attachments(self):
         while self.attach_layout.count():
@@ -793,15 +837,61 @@ class AgentWindow(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         if not self.attachments:
+            self.attach_host.setFixedHeight(0)
             self.attach_host.hide()
+            self.attach_host.updateGeometry()
+            self.composer.updateGeometry()
+            if hasattr(self, "empty"):
+                self.empty.setVisible(self._run is None)
             return
         for p in self.attachments:
-            self.attach_layout.addWidget(AttachmentChip(p, removable=True, on_remove=self._remove_attachment))
-        self.attach_layout.addStretch(1)
+            self.attach_layout.addWidget(
+                AttachmentChip(
+                    p, removable=True, on_remove=self._remove_attachment, compact=True
+                )
+            )
+        self.attach_layout.invalidate()
+        # Compact task chips are 40px high and at most 160px wide.  The flow
+        # layout only knows real widths after its first pass, so use a
+        # deterministic row count; otherwise 3+ chips can be clipped.
+        width = self.composer.width() - 22 if self.composer.width() > 100 else 480
+        per_row = max(1, max(300, width) // 165)
+        rows = (len(self.attachments) + per_row - 1) // per_row
+        height = rows * 40 + max(0, rows - 1) * 5 + 8
+        self.attach_host.setFixedHeight(height)
         self.attach_host.show()
+        self.attach_host.updateGeometry()
+        self.composer.updateGeometry()
+        if hasattr(self, "empty"):
+            self.empty.hide()
+
+    def _add_paths(self, paths: list[str]):
+        existing = {str(p.resolve()) for p in self.attachments}
+        added = 0
+        for raw in paths:
+            p = Path(raw)
+            if not p.is_file():
+                continue
+            try:
+                key = str(p.resolve())
+            except Exception:
+                key = str(p)
+            if key in existing:
+                continue
+            self.attachments.append(p)
+            existing.add(key)
+            added += 1
+            if len(self.attachments) >= 6:
+                break
+        if added:
+            self._rebuild_attachments()
+            self.show_toast(f"已加入 {added} 个附件")
 
     def _remove_attachment(self, path: str):
-        self.attachments = [p for p in self.attachments if str(p) != path]
+        target = str(Path(path).resolve())
+        self.attachments = [
+            p for p in self.attachments if str(p.resolve()) != target
+        ]
         QTimer.singleShot(0, self._rebuild_attachments)
 
     def stop_task(self):
@@ -823,6 +913,8 @@ class AgentWindow(QWidget):
                 w.deleteLater()
         self._run = None
         self._finalized = True
+        self.attachments = []
+        self._rebuild_attachments()
         self.empty.show()
         self._end_busy("idle")
         self.pet_state.emit("idle")
@@ -983,7 +1075,23 @@ class AgentWindow(QWidget):
             super().keyPressEvent(e)
 
     def eventFilter(self, obj, event):
-        if obj is self.edit and event.type() == QEvent.Type.KeyPress:
+        edit_surface = obj is self.edit or obj is self.edit.viewport()
+        if edit_surface and event.type() in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+            if event.mimeData().hasUrls():
+                self._show_drop_overlay()
+                event.acceptProposedAction()
+                return True
+        if edit_surface and event.type() == QEvent.Type.Drop:
+            paths = self._url_paths(event)
+            self._hide_drop_overlay()
+            if paths:
+                self._add_paths(paths)
+                event.acceptProposedAction()
+                return True
+        if edit_surface and event.type() == QEvent.Type.DragLeave:
+            self._hide_drop_overlay()
+            return False
+        if edit_surface and event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (
                 event.modifiers() & Qt.KeyboardModifier.ShiftModifier
@@ -1002,21 +1110,50 @@ class AgentWindow(QWidget):
             self._header_drag = None
         return super().eventFilter(obj, event)
 
+    @staticmethod
+    def _url_paths(e) -> list[str]:
+        if not e.mimeData().hasUrls():
+            return []
+        return [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
+
+    def _show_drop_overlay(self):
+        self.drop_overlay.setGeometry(self.rect())
+        self.drop_overlay.show()
+        self.drop_overlay.raise_()
+
+    def _hide_drop_overlay(self):
+        if hasattr(self, "drop_overlay"):
+            self.drop_overlay.hide()
+
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
-            paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
-            if paths:
-                e.acceptProposedAction()
-                return
+        paths = self._url_paths(e)
+        if paths:
+            self._show_drop_overlay()
+            e.acceptProposedAction()
+            return
         e.ignore()
 
+    def dragLeaveEvent(self, e):
+        self._hide_drop_overlay()
+        e.accept()
+
     def dropEvent(self, e):
-        paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
+        paths = self._url_paths(e)
+        self._hide_drop_overlay()
         if paths:
             e.acceptProposedAction()
-            self.attachments = [Path(p) for p in paths if Path(p).is_file()][:6]
+            self._add_paths(paths)
+            self.show_toast(
+                f"文件已放进任务，发送时会一起交给{theme.character_name(self.character)}"
+            )
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "drop_overlay"):
+            self.drop_overlay.setGeometry(self.rect())
+        # Keep the attachment card width honest after a window resize.
+        if hasattr(self, "attach_layout") and self.attachments:
             self._rebuild_attachments()
-            self.show_toast(f"文件已放进任务，发送时会一起交给{theme.character_name(self.character)}")
 
     def shutdown(self):
         self.controller.shutdown()

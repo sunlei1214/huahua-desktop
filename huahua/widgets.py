@@ -931,17 +931,25 @@ class MessageBubble(QFrame):
 class AttachmentChip(QFrame):
     remove_requested = Signal(str)
 
-    def __init__(self, path: str | Path, removable: bool = False, on_remove=None, parent=None):
+    def __init__(
+        self,
+        path: str | Path,
+        removable: bool = False,
+        on_remove=None,
+        parent=None,
+        compact: bool = False,
+    ):
         super().__init__(parent)
         self.path = Path(path)
+        self._compact = compact
         self.setObjectName("SoftCard")
-        self.setFixedHeight(48)
-        self.setMaximumWidth(188)
+        self.setFixedHeight(40 if compact else 48)
+        self.setMaximumWidth(160 if compact else 188)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(4, 4, 6, 4)
-        lay.setSpacing(6)
+        lay.setContentsMargins(3 if compact else 4, 3 if compact else 4, 5 if compact else 6, 3 if compact else 4)
+        lay.setSpacing(4 if compact else 6)
         thumb = QLabel()
-        thumb.setFixedSize(38, 38)
+        thumb.setFixedSize(32 if compact else 38, 32 if compact else 38)
         pm = QPixmap(str(path))
         if pm.isNull() and Path(path).suffix.lower() in media.VIDEO_EXTS:
             try:
@@ -956,7 +964,7 @@ class AttachmentChip(QFrame):
                 pass
         if pm.isNull():
             pm = QPixmap(str(theme.ASSETS / "icon.png"))
-        thumb.setPixmap(pm.scaled(38, 38, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+        thumb.setPixmap(pm.scaled(32 if compact else 38, 32 if compact else 38, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
         thumb.setStyleSheet("border-radius:9px;background:#F5E7DE;")
         thumb.setScaledContents(True)
         lay.addWidget(thumb)
@@ -964,9 +972,10 @@ class AttachmentChip(QFrame):
         col.setSpacing(0)
         name = QLabel(self.path.name)
         name.setFont(font(8, QFont.Weight.DemiBold))
-        name.setMaximumWidth(108)
+        name_width = 82 if compact else 108
+        name.setMaximumWidth(name_width)
         fm = QFontMetrics(name.font())
-        name.setText(fm.elidedText(self.path.name, Qt.TextElideMode.ElideMiddle, 108))
+        name.setText(fm.elidedText(self.path.name, Qt.TextElideMode.ElideMiddle, name_width))
         name.setToolTip(str(self.path))
         size = QLabel(media.pretty_size(self.path.stat().st_size) if self.path.exists() else "")
         size.setObjectName("Tiny")
@@ -974,7 +983,7 @@ class AttachmentChip(QFrame):
         col.addWidget(size)
         lay.addLayout(col)
         if removable:
-            x = IconButton("close", "移除", 20)
+            x = IconButton("close", "移除", 18 if compact else 20)
             x.clicked.connect(lambda: self._remove(on_remove))
             lay.addWidget(x)
 
@@ -1092,5 +1101,5 @@ class ToastLabel(QLabel):
         self.raise_()
         parent = self.parentWidget()
         if parent:
-            self.move((parent.width() - self.width()) // 2, parent.height() - self.height() - 24)
+            self.move((parent.width() - self.width()) // 2, parent.height() - self.height() - 58)
         self._timer.start(ms)
