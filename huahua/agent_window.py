@@ -585,7 +585,10 @@ class AgentWindow(QWidget):
         mode_label.setObjectName("Tiny")
         row.addWidget(mode_label)
         self.mode_switch = SegmentedControl(
-            [("执行", "agent"), ("计划", "plan"), ("YOLO", "yolo")], active="agent", compact=True
+            [("执行", "agent"), ("计划", "plan"), ("YOLO", "yolo")],
+            active="agent",
+            compact=True,
+            variant="mode",
         )
         self.mode_switch.setFixedWidth(166)
         self.mode_switch.setToolTip("执行：逐次审批；计划：只读；YOLO：完全放开，不推荐")

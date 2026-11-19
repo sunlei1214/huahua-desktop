@@ -124,15 +124,20 @@ class SegmentedControl(QFrame):
         active: str = "",
         parent=None,
         compact: bool = False,
+        variant: str = "view",
     ):
         super().__init__(parent)
-        self.setObjectName("Segmented")
+        self.variant = variant
+        self.setObjectName("ViewSwitch" if variant == "view" else "ModeSwitch")
         self.options = options
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
         self.buttons: dict[str, QPushButton] = {}
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(3, 3, 3, 3)
+        if variant == "view":
+            lay.setContentsMargins(0, 2, 0, 0)
+        else:
+            lay.setContentsMargins(3, 3, 3, 3)
         lay.setSpacing(2)
         for i, (label, value) in enumerate(options):
             b = QPushButton(label)

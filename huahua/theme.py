@@ -302,30 +302,45 @@ def qss() -> str:
         color: {PEACH_DEEP};
         border-color: #F1D3C4;
     }}
-    QFrame#Segmented {{
-        background: #F7EDE7;
-        border: 1px solid #EED9CD;
-        border-radius: 12px;
+    QFrame#ViewSwitch {{
+        background: transparent;
+        border: none;
     }}
     QPushButton#Segment {{
         background: transparent;
-        border: 1px solid transparent;
-        border-radius: 9px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
         color: #9A8178;
-        padding: 3px 8px;
+        padding: 4px 8px 2px;
         font-size: 10px;
         font-weight: 600;
     }}
-    QPushButton#Segment:hover {{
-        background: #FCF5F0;
-        color: {INK_SOFT};
-    }}
+    QPushButton#Segment:hover {{ color: {INK_SOFT}; }}
     QPushButton#Segment:checked {{
-        background: white;
-        border-color: #F0D4C7;
+        background: transparent;
+        border-bottom: 2px solid {PEACH_DEEP};
         color: {PEACH_DEEP};
     }}
-    QPushButton#Segment:pressed {{ background: {PEACH_SOFT}; }}
+    QPushButton#Segment:pressed {{ color: {PEACH_DEEP}; }}
+    QFrame#ModeSwitch {{
+        background: #F8EFE9;
+        border: 1px solid #EED9CD;
+        border-radius: 11px;
+    }}
+    QFrame#ModeSwitch QPushButton#Segment {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-bottom: 1px solid transparent;
+        border-radius: 8px;
+        padding: 3px 7px;
+    }}
+    QFrame#ModeSwitch QPushButton#Segment:hover {{ background: #FCF5F0; }}
+    QFrame#ModeSwitch QPushButton#Segment:checked {{
+        background: white;
+        border: 1px solid #F0D4C7;
+        color: {PEACH_DEEP};
+    }}
     QPushButton#ThoughtToggle {{
         background: transparent;
         border: none;
