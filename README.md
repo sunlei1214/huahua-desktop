@@ -51,6 +51,12 @@
 
 ![思考过程](docs/agent_thinking_preview.png)
 
+任务最小化到桌宠后，头顶会显示半透明省略号气泡；需要你选择时，会展开成多个选项气泡：
+
+![桌宠思考气泡](docs/pet_thinking_bubble.png)
+
+![桌宠选项气泡](docs/pet_choice_bubbles.png)
+
 执行中的工具卡片、计划进度和命令审批：
 
 ![执行中的工具与审批](docs/agent_run_preview.png)
@@ -64,6 +70,7 @@
 - 右上角「会话」切回聊天；聊天右上角「任务」切回任务；
 - 切换华华 / 熙熙后，任务窗口里的标题、提示和桌宠气泡会一起换；
 - 完成 / 需要确认 / 失败都会回到桌宠气泡；
+- 任务窗口可以最小化到桌宠：头顶显示省略号思考气泡，审批时变成多个可点的选项气泡；
 - 媒体能力（生图、图生图、数字人）仍然走原来的 MoArk 直连，不受影响。
 
 MothX 运行时是外置 sidecar（约 60 MB），放在：
@@ -167,6 +174,7 @@ huahua/
   pet.py                透明桌宠窗口、气泡、右键菜单、拖拽
   chat.py               对话 / 生图 / 图生图 / 数字人界面
   agent_window.py       执行任务窗口（MothX Agent / 工具 / 审批）
+  task_bubble.py        桌宠头顶的思考 / 选项气泡
   mothx/                ACP 客户端、运行时配置、Agent 控制器
   settings.py           设置中心（含角色切换、MothX 运行时路径）
   api.py                模力方舟四类接口

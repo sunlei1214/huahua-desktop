@@ -16,6 +16,7 @@ from .config import Config, LOG_PATH, default_output_dir
 from .history import HistoryStore
 from .pet import PetWindow
 from .settings import SettingsDialog
+from .task_bubble import ChoiceBubble, ThinkingBubble
 
 
 class HuaHuaApp(QObject):
@@ -35,6 +36,8 @@ class HuaHuaApp(QObject):
         self.pet = PetWindow(self.config)
         self.chat = ChatWindow(self.config, self.history)
         self.agent = AgentWindow(self.config)
+        self.thinking_bubble = ThinkingBubble()
+        self.choice_bubbles: list[ChoiceBubble] = []
         self.settings_dialog: SettingsDialog | None = None
         self._quitting = False
         self._focus_timer: QTimer | None = None
@@ -66,6 +69,7 @@ class HuaHuaApp(QObject):
         self.pet.bubble_activated.connect(self._bubble_clicked)
         self.pet.config_changed.connect(self._config_changed)
         self.pet.moved.connect(self._update_tray_tip)
+        self.pet.moved.connect(self._reposition_task_bubbles)
 
         self.chat.pet_state.connect(self._pet_state)
         self.chat.notify_requested.connect(self._notify)
@@ -77,6 +81,10 @@ class HuaHuaApp(QObject):
         self.agent.notify_requested.connect(self._notify)
         self.agent.settings_requested.connect(self.open_settings)
         self.agent.chat_requested.connect(lambda: self.open_chat())
+        self.agent.minimized_changed.connect(self._agent_minimized)
+        self.agent.choice_requested.connect(self._agent_choice_requested)
+        self.agent.choice_resolved.connect(self._hide_task_bubbles)
+        self.thinking_bubble.activated.connect(self.open_agent)
 
     @property
     def character(self) -> str:
@@ -248,6 +256,99 @@ class HuaHuaApp(QObject):
 
     def _pet_state(self, state: str):
         self.pet.set_state(state)
+        if not self.agent.is_minimized():
+            return
+        if state in ("thinking", "tool", "starting"):
+            if self.agent.is_task_running and not self.agent.pending_choice:
+                self._show_thinking_bubble()
+        elif state in ("waiting", "success", "failure", "idle"):
+            if state != "waiting":
+                self._hide_task_bubbles()
+            elif self.agent.pending_choice:
+                self._hide_thinking_bubble()
+
+    def _agent_choice_requested(self, data: dict):
+        if self.agent.is_minimized():
+            self._show_choice_bubbles(data)
+
+    def _agent_minimized(self, minimized: bool):
+        if not minimized:
+            self._hide_task_bubbles()
+            return
+        if self.agent.pending_choice:
+            self._show_choice_bubbles(self.agent.pending_choice)
+        elif self.agent.is_task_running:
+            self._show_thinking_bubble()
+        else:
+            self._hide_task_bubbles()
+
+    def _show_thinking_bubble(self):
+        if not self.pet.isVisible() or not self.config.get("appearance.bubble", True):
+            return
+        if self.agent.pending_choice:
+            return
+        self.pet.bubble.hide()
+        self.thinking_bubble.show_at(self.pet.geometry())
+
+    def _hide_thinking_bubble(self):
+        self.thinking_bubble.hide_bubble()
+
+    def _show_choice_bubbles(self, data: dict):
+        self.pet.bubble.hide()
+        self._hide_thinking_bubble()
+        self._clear_choice_bubbles()
+        options = data.get("options") or []
+        if not options:
+            return
+        for i, opt in enumerate(options):
+            b = ChoiceBubble(
+                str(opt.get("name") or opt.get("label") or "确定"),
+                str(opt.get("id") or ""),
+                tail=(i == len(options) - 1),
+            )
+            b.chosen.connect(lambda oid, d=data: self._choose_task_option(d, oid))
+            self.choice_bubbles.append(b)
+        self._layout_choice_bubbles()
+
+    def _layout_choice_bubbles(self):
+        if not self.choice_bubbles:
+            return
+        anchor = self.pet.geometry()
+        screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
+        geo = screen.availableGeometry()
+        gap = 6
+        total_h = sum(b.height() for b in self.choice_bubbles) + gap * (len(self.choice_bubbles) - 1)
+        bottom = anchor.top() - 10
+        top = bottom - total_h
+        if top < geo.top() + 8:
+            top = geo.top() + 8
+        y = top
+        for b in self.choice_bubbles:
+            x = anchor.center().x() - b.width() // 2
+            x = max(geo.left() + 8, min(x, geo.right() - b.width() - 8))
+            b.show_at(int(x), int(y))
+            y += b.height() + gap
+
+    def _choose_task_option(self, data: dict, option_id: str):
+        self._hide_task_bubbles()
+        self.agent.answer_choice(data.get("request_id"), str(data.get("kind") or "permission"), option_id)
+        QTimer.singleShot(200, lambda: self._pet_state("thinking"))
+
+    def _clear_choice_bubbles(self):
+        for b in self.choice_bubbles:
+            b.hide()
+            b.deleteLater()
+        self.choice_bubbles = []
+
+    def _hide_task_bubbles(self):
+        self._hide_thinking_bubble()
+        self._clear_choice_bubbles()
+
+    def _reposition_task_bubbles(self):
+        if self.thinking_bubble.isVisible():
+            self.thinking_bubble.show_at(self.pet.geometry())
+        if self.choice_bubbles:
+            self._layout_choice_bubbles()
 
     def _files_dropped(self, paths: list):
         self.open_chat()
@@ -284,6 +385,10 @@ class HuaHuaApp(QObject):
                 icon = ""
         self._play_chime()
         approval = payload.startswith("agent-approval")
+        if approval and self.agent.is_minimized():
+            # The pet HUD shows one bubble per option; don't stack a second
+            # generic approval bubble on top of it.
+            return
         if self.pet.isVisible():
             self.pet.notify(
                 title, subtitle, icon=icon, payload=payload,
@@ -349,6 +454,7 @@ class HuaHuaApp(QObject):
             self.pet.set_state("greet", 1200)
 
     def hide_pet(self):
+        self._hide_task_bubbles()
         self.pet.bubble.hide()
         self.pet.hide()
         self.tray.showMessage(f"{self.character_name}躲起来了", "点托盘图标就能叫出来。", QSystemTrayIcon.MessageIcon.Information, 2500)
@@ -416,6 +522,7 @@ class HuaHuaApp(QObject):
             self.config.save()
             self.chat.shutdown()
             self.agent.shutdown()
+            self._hide_task_bubbles()
             self.history.save()
             self.pet.close()
             self.tray.hide()

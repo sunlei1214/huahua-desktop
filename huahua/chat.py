@@ -273,9 +273,11 @@ class ChatWindow(QWidget):
         self.history_btn.clicked.connect(self._show_history)
         self.settings_btn = IconButton("settings", "设置", 28)
         self.settings_btn.clicked.connect(self.settings_requested.emit)
+        self.min_btn = IconButton("minimize", "最小化", 26)
+        self.min_btn.clicked.connect(self.showMinimized)
         self.close_btn = IconButton("close", "收起", 28)
         self.close_btn.clicked.connect(self.hide)
-        for b in (self.history_btn, self.settings_btn, self.close_btn):
+        for b in (self.history_btn, self.settings_btn, self.min_btn, self.close_btn):
             hl.addWidget(b)
         root.addWidget(self.header)
 
@@ -1158,7 +1160,9 @@ class ChatWindow(QWidget):
             self.toast.show_text(text, ms)
 
     def show_panel(self):
-        if not self.isVisible():
+        if self.isMinimized():
+            self.showNormal()
+        elif not self.isVisible():
             self.show()
         self.raise_()
         self.activateWindow()

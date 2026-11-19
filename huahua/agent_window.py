@@ -454,6 +454,9 @@ class AgentWindow(QWidget):
     notify_requested = Signal(str, str, str, str)
     settings_requested = Signal()
     chat_requested = Signal()
+    minimized_changed = Signal(bool)
+    choice_requested = Signal(dict)
+    choice_resolved = Signal()
     hidden = Signal()
 
     def __init__(self, config: Config):
@@ -465,6 +468,8 @@ class AgentWindow(QWidget):
         self._run: AgentRunView | None = None
         self._busy = False
         self._finalized = False
+        self._minimized = False
+        self._pending_choice: dict[str, Any] | None = None
         self._header_drag: QPoint | None = None
         self._header_origin: QPoint | None = None
 
@@ -535,9 +540,11 @@ class AgentWindow(QWidget):
         self.new_btn.clicked.connect(self.new_task)
         self.settings_btn = IconButton("settings", "设置", 28)
         self.settings_btn.clicked.connect(self.settings_requested.emit)
+        self.min_btn = IconButton("minimize", "最小化到桌宠，任务继续", 26)
+        self.min_btn.clicked.connect(self.minimize_to_pet)
         self.close_btn = IconButton("close", "收起", 28)
-        self.close_btn.clicked.connect(self.hide)
-        for b in (self.new_btn, self.settings_btn, self.close_btn):
+        self.close_btn.clicked.connect(self._close_clicked)
+        for b in (self.new_btn, self.settings_btn, self.min_btn, self.close_btn):
             hl.addWidget(b)
         root.addWidget(header)
         self._header = header
@@ -822,7 +829,7 @@ class AgentWindow(QWidget):
                 return
         self._last_mode = mode
         self.controller.set_mode(mode)
-        self.pet_state.emit("waiting" if mode == "plan" else "tool")
+        self.pet_state.emit("waiting" if mode == "plan" else "thinking")
 
     # ------------------------------------------------------------------
     def _view_changed(self, view: str):
@@ -893,6 +900,8 @@ class AgentWindow(QWidget):
         self._run.set_status("正在启动 MothX…", PEACH_DEEP)
         self._busy = True
         self._finalized = False
+        self._pending_choice = None
+        self.choice_resolved.emit()
         self.send_btn.setEnabled(False)
         self.stop_btn.show()
         self._scroll_bottom()
@@ -991,6 +1000,8 @@ class AgentWindow(QWidget):
         self.controller.cancel()
         if self._run:
             self._run.finish("已停止", MUTED)
+        self._pending_choice = None
+        self.choice_resolved.emit()
         self._finalized = True
         self._end_busy("idle")
         self.pet_state.emit("idle")
@@ -999,6 +1010,8 @@ class AgentWindow(QWidget):
         if self._busy:
             self.controller.cancel()
         self.controller.new_task()
+        self._pending_choice = None
+        self.choice_resolved.emit()
         for i in reversed(range(self.tl.count())):
             w = self.tl.itemAt(i).widget()
             if w and w is not self.empty:
@@ -1034,7 +1047,7 @@ class AgentWindow(QWidget):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color:{color};font-size:10px;")
         if state == "working":
-            self.pet_state.emit("tool")
+            self.pet_state.emit("thinking")
             if self._run:
                 self._run.set_status("执行中…", color)
         elif state == "waiting":
@@ -1064,7 +1077,7 @@ class AgentWindow(QWidget):
         if self._run:
             self._run.add_tool(info)
             self._scroll_bottom()
-        self.pet_state.emit("tool")
+        self.pet_state.emit("thinking")
 
     def _on_plan(self, entries: list[dict[str, Any]]):
         if self._run:
@@ -1081,17 +1094,35 @@ class AgentWindow(QWidget):
             self._run = AgentRunView(self.character, theme.character_name(self.character))
             self.tl.insertWidget(self.tl.count() - 1, self._run)
         def decide(oid: str):
-            self.controller.answer_permission(data.get("request_id"), oid)
-            self.pet_state.emit("tool")
+            self.answer_choice(data.get("request_id"), "permission", oid)
             self._run.set_status("继续执行…" if oid else "已拒绝", MUTED)
         self._run.add_approval(data, decide)
+        self._pending_choice = {
+            "kind": "permission",
+            "request_id": data.get("request_id"),
+            "title": str(data.get("title") or "需要你确认"),
+            "options": data.get("options") or [],
+        }
         self._scroll_bottom()
         self.pet_state.emit("waiting")
+        self.choice_requested.emit(self._pending_choice)
         self.notify_requested.emit("需要你确认", str(data.get("title") or f"{theme.character_name(self.character)}想执行一个操作"), "", "agent-approval")
 
     def _on_question(self, data: dict[str, Any]):
         question = data.get("question") or f"{theme.character_name(self.character)}想确认一下"
         options = data.get("options") or []
+        self._pending_choice = {
+            "kind": "question",
+            "request_id": data.get("request_id"),
+            "title": question,
+            "options": options,
+        }
+        # While minimized, answer through the pet's choice bubbles instead of
+        # forcing a modal dialog to open on top of the task window.
+        if self._minimized and options:
+            self.pet_state.emit("waiting")
+            self.choice_requested.emit(self._pending_choice)
+            return
         answer = ""
         if options:
             labels = [o["label"] for o in options]
@@ -1102,8 +1133,22 @@ class AgentWindow(QWidget):
             answer, ok = QInputDialog.getText(self, f"{theme.character_name(self.character)}在问你", question)
             if not ok:
                 answer = ""
+        self._pending_choice = None
+        self.choice_resolved.emit()
         self.controller.answer_question(data.get("request_id"), answer)
-        self.pet_state.emit("tool")
+        self.pet_state.emit("thinking")
+
+    def answer_choice(self, request_id: Any, kind: str, option_id: str) -> None:
+        """Resolve a pending permission/question from the pet HUD."""
+        if kind == "permission":
+            self.controller.answer_permission(request_id, option_id)
+        else:
+            self.controller.answer_question(request_id, option_id)
+        self._pending_choice = None
+        self.choice_resolved.emit()
+        self.pet_state.emit("thinking")
+        if self._run:
+            self._run.set_status("继续执行…" if option_id else "已拒绝", MUTED)
 
     def _on_run_finished(self, reason: str):
         if self._finalized:
@@ -1116,6 +1161,8 @@ class AgentWindow(QWidget):
             self._run.finish("完成" if reason != "cancelled" else "已停止",
                              "#4FAE86" if reason != "cancelled" else MUTED)
         self._end_busy()
+        self._pending_choice = None
+        self.choice_resolved.emit()
         self.pet_state.emit("success" if reason != "cancelled" else "idle")
         if reason != "cancelled":
             self.notify_requested.emit(
@@ -1135,6 +1182,8 @@ class AgentWindow(QWidget):
             self.tl.insertWidget(self.tl.count() - 1, self._run)
         self._run.finalize(f"这次没执行成功：\n\n{message}")
         self._run.finish("失败", DANGER)
+        self._pending_choice = None
+        self.choice_resolved.emit()
         self._end_busy()
         self.status_label.setText("● 出错")
         self.status_label.setStyleSheet(f"color:{DANGER};font-size:10px;")
@@ -1153,9 +1202,39 @@ class AgentWindow(QWidget):
             self.toast.show_text(text, ms)
 
     # ------------------------------------------------------------------
+    @property
+    def is_task_running(self) -> bool:
+        return self._busy or self.controller.running
+
+    @property
+    def pending_choice(self) -> dict[str, Any] | None:
+        return self._pending_choice
+
+    def is_minimized(self) -> bool:
+        return self._minimized
+
+    def _close_clicked(self):
+        if self.is_task_running or self._pending_choice:
+            self.minimize_to_pet()
+        else:
+            self.hide()
+
+    def minimize_to_pet(self):
+        if not self.is_task_running and not self._pending_choice:
+            # No active task: keep normal minimize behavior.
+            self.showMinimized()
+            return
+        self._minimized = True
+        self.hide()
+        self.minimized_changed.emit(True)
+
     def show_panel(self):
-        if not self.isVisible():
+        if self.isMinimized():
+            self.showNormal()
+        elif not self.isVisible():
             self.show()
+        self._minimized = False
+        self.minimized_changed.emit(False)
         self.raise_()
         self.activateWindow()
         QTimer.singleShot(80, lambda: self.edit.setFocus())
