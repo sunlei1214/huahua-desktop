@@ -484,6 +484,38 @@ class SettingsDialog(QDialog):
         trow.addStretch(1)
         cl3.addLayout(trow)
         lay.addWidget(card3)
+
+        self._section(lay, "执行引擎（MothX）")
+        card4, cl4 = self._card()
+        runtime_row = QWidget()
+        rh = QHBoxLayout(runtime_row)
+        rh.setContentsMargins(0, 0, 0, 0)
+        rh.setSpacing(6)
+        self.runtime_path = QLineEdit()
+        self.runtime_path.setPlaceholderText("runtime/mothx.exe（留空自动查找）")
+        rh.addWidget(self.runtime_path, 1)
+        rb = QPushButton("选择…")
+        rb.setObjectName("Ghost")
+        rb.clicked.connect(self._browse_runtime)
+        rh.addWidget(rb)
+        cl4.addWidget(self._row("MothX 路径", runtime_row, "下载 Windows 版 MothX 后，把 mothx.exe 放到程序目录的 runtime 文件夹。"))
+        ws_row = QWidget()
+        wh = QHBoxLayout(ws_row)
+        wh.setContentsMargins(0, 0, 0, 0)
+        wh.setSpacing(6)
+        self.workspace_edit = QLineEdit()
+        self.workspace_edit.setPlaceholderText("默认：用户目录\\华华工作区")
+        wh.addWidget(self.workspace_edit, 1)
+        wb = QPushButton("选择…")
+        wb.setObjectName("Ghost")
+        wb.clicked.connect(self._browse_workspace)
+        wh.addWidget(wb)
+        cl4.addWidget(self._row("默认工作区", ws_row, "执行任务时只在这个文件夹里读写；每次写文件/运行命令仍会先询问。"))
+        rel = QPushButton("打开 MothX Releases 下载页")
+        rel.setObjectName("Ghost")
+        rel.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/oschina/mothx/releases")))
+        cl4.addWidget(rel)
+        lay.addWidget(card4)
         lay.addStretch(1)
         return page
 
@@ -772,6 +804,10 @@ class SettingsDialog(QDialog):
         self.max_history.setValue(int(s.get("max_history", 30)))
         self._update_usage()
 
+        m = self.draft.get("mothx", {})
+        self.runtime_path.setText(str(m.get("runtime_path", "") or ""))
+        self.workspace_edit.setText(str(m.get("workspace", "") or ""))
+
         b = self.draft["behavior"]
         self.notify.setChecked(bool(b.get("notify", True)))
         self.sound.setChecked(bool(b.get("sound", True)))
@@ -935,6 +971,16 @@ class SettingsDialog(QDialog):
         if hasattr(self, "preview"):
             self.preview.set_state(v, "greet" if self.character == "xixi" else "idle", self.character)
 
+    def _browse_runtime(self):
+        f, _ = QFileDialog.getOpenFileName(self, "选择 mothx.exe", self.runtime_path.text() or str(Path.home()), "MothX (mothx.exe);;所有文件 (*.*)")
+        if f:
+            self.runtime_path.setText(f)
+
+    def _browse_workspace(self):
+        d = QFileDialog.getExistingDirectory(self, "选择华华的默认工作区", self.workspace_edit.text() or str(Path.home()))
+        if d:
+            self.workspace_edit.setText(d)
+
     def _browse_output(self):
         d = QFileDialog.getExistingDirectory(self, "选择作品文件夹", self.output_dir.text() or str(Path.home()))
         if d:
@@ -984,6 +1030,10 @@ class SettingsDialog(QDialog):
         a["animations"] = self.animations.isChecked()
         a["walk"] = self.walk.isChecked()
         a["bubble"] = self.bubble_on.isChecked()
+
+        m = self.draft.setdefault("mothx", {})
+        m["runtime_path"] = self.runtime_path.text().strip()
+        m["workspace"] = self.workspace_edit.text().strip()
 
         s = self.draft["storage"]
         s["output_dir"] = self.output_dir.text().strip() or str(default_output_dir())

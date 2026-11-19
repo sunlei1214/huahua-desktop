@@ -31,6 +31,27 @@
 - **历史记录**：对话自动保存在本机，可随时切换、清空；生成的图片、视频、配音按文件夹归档。
 - **右键设置**：角色、大小、透明度、置顶、气泡、声音、待机睡眠、开机启动、存储位置、API 方案管理。
 
+## 执行任务（MothX Agent）
+
+除了轻聊，右键桌宠 → **让华华干活…** 会打开独立的执行任务窗口：
+
+![执行任务窗口](docs/agent_p1.png)
+
+- 后台运行 `runtime/mothx.exe acp`，通过 ACP 协议连接；
+- 支持文件读取、命令执行、搜索、MCP、Skills 等 MothX 工具；
+- 工具调用显示成可折叠的小卡片，写文件 / 运行命令会逐次弹出审批；
+- 支持切换模型、只读计划 / 执行模式、工作区选择、停止任务；
+- 完成 / 需要确认 / 失败都会回到桌宠气泡；
+- 媒体能力（生图、图生图、数字人）仍然走原来的 MoArk 直连，不受影响。
+
+MothX 运行时是外置 sidecar（约 60 MB），放在：
+
+```text
+runtime/mothx.exe
+```
+
+它不提交到 Git 仓库，避免单文件过大；下载地址：<https://github.com/oschina/mothx/releases>。当前按 `v1.3.107` 验证。
+
 ## 直接使用
 
 ### 方式一：双击 `华华.exe`
@@ -121,7 +142,9 @@ huahua/
   app.py                托盘、桌宠与对话的调度、通知、专注计时
   pet.py                透明桌宠窗口、气泡、右键菜单、拖拽
   chat.py               对话 / 生图 / 图生图 / 数字人界面
-  settings.py           设置中心（含角色切换）
+  agent_window.py       执行任务窗口（MothX Agent / 工具 / 审批）
+  mothx/                ACP 客户端、运行时配置、Agent 控制器
+  settings.py           设置中心（含角色切换、MothX 运行时路径）
   api.py                模力方舟四类接口
   workers.py            QThread 后台任务
   widgets.py            气泡、卡片、Markdown 消息等 UI 组件
@@ -176,6 +199,7 @@ Windows 可能把新图标折叠到任务栏右下角的 `^` 里；也可以重�
 
 - **源代码**：MIT，见 [LICENSE](LICENSE)。
 - **角色形象 / 表情 / 头像 / 示例数字人视频**：版权归项目作者所有，不包含在 MIT 授权范围内，仅用于运行、学习和非商业展示，详见 [ASSETS_LICENSE.md](ASSETS_LICENSE.md)。
+- **MothX 运行时**：MIT，作为独立 sidecar 使用，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 说明
 

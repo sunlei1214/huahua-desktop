@@ -170,6 +170,7 @@ class ChatWindow(QWidget):
     pet_state = Signal(str)
     notify_requested = Signal(str, str, str, str)  # text, subtitle, icon path, payload
     settings_requested = Signal()
+    agent_requested = Signal()
     title_changed = Signal(str)
     generation_started = Signal(str)
 
@@ -261,17 +262,17 @@ class ChatWindow(QWidget):
         title_col.addWidget(self.status_label)
         hl.addLayout(title_col, 1)
 
+        self.agent_btn = IconButton("sparkle", "打开执行任务", 30)
+        self.agent_btn.clicked.connect(self.agent_requested.emit)
         self.new_btn = IconButton("plus", "新对话", 30)
         self.new_btn.clicked.connect(self.new_chat)
         self.history_btn = IconButton("history", "历史对话", 30)
         self.history_btn.clicked.connect(self._show_history)
         self.settings_btn = IconButton("settings", "设置", 30)
         self.settings_btn.clicked.connect(self.settings_requested.emit)
-        self.min_btn = IconButton("minimize", "收起", 30)
-        self.min_btn.clicked.connect(self.hide)
         self.close_btn = IconButton("close", "收起", 30)
         self.close_btn.clicked.connect(self.hide)
-        for b in (self.new_btn, self.history_btn, self.settings_btn, self.min_btn, self.close_btn):
+        for b in (self.agent_btn, self.new_btn, self.history_btn, self.settings_btn, self.close_btn):
             hl.addWidget(b)
         root.addWidget(self.header)
 

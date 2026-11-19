@@ -10,6 +10,7 @@ from PySide6.QtMultimedia import QSoundEffect
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import __version__, media, theme
+from .agent_window import AgentWindow
 from .chat import ChatWindow
 from .config import Config, LOG_PATH, default_output_dir
 from .history import HistoryStore
@@ -33,6 +34,7 @@ class HuaHuaApp(QObject):
 
         self.pet = PetWindow(self.config)
         self.chat = ChatWindow(self.config, self.history)
+        self.agent = AgentWindow(self.config)
         self.settings_dialog: SettingsDialog | None = None
         self._quitting = False
         self._focus_timer: QTimer | None = None
@@ -53,6 +55,7 @@ class HuaHuaApp(QObject):
     # ------------------------------------------------------------------
     def _wire(self):
         self.pet.chat_requested.connect(lambda: self.open_chat())
+        self.pet.agent_requested.connect(self.open_agent)
         self.pet.mode_requested.connect(lambda m: self.open_chat(m))
         self.pet.settings_requested.connect(self.open_settings)
         self.pet.hide_requested.connect(self.hide_pet)
@@ -67,7 +70,12 @@ class HuaHuaApp(QObject):
         self.chat.pet_state.connect(self._pet_state)
         self.chat.notify_requested.connect(self._notify)
         self.chat.settings_requested.connect(self.open_settings)
+        self.chat.agent_requested.connect(self.open_agent)
         self.chat.title_changed.connect(lambda _t: self._update_tray_tip())
+
+        self.agent.pet_state.connect(self._pet_state)
+        self.agent.notify_requested.connect(self._notify)
+        self.agent.settings_requested.connect(self.open_settings)
 
     @property
     def character(self) -> str:
@@ -86,6 +94,8 @@ class HuaHuaApp(QObject):
         self.chat.apply_character()
         self.chat.setWindowIcon(icon)
         self.chat.setWindowTitle(name)
+        self.agent.apply_character()
+        self.agent.setWindowIcon(icon)
         self.tray.setIcon(icon)
         self.tray.setToolTip(f"{name} · 桌面灵感搭子")
         self.pet.setToolTip(f"点我聊天 · {name} · 右键更多")
@@ -121,6 +131,8 @@ class HuaHuaApp(QObject):
         menu.setStyleSheet(theme.qss())
         a = menu.addAction(f"打开{self.character_name}")
         a.triggered.connect(lambda: self.open_chat())
+        a = menu.addAction("让华华干活…")
+        a.triggered.connect(self.open_agent)
         a = menu.addAction("画一张图")
         a.triggered.connect(lambda: self.open_chat("image"))
         a = menu.addAction("做个数字人视频")
@@ -183,6 +195,7 @@ class HuaHuaApp(QObject):
     def open_chat(self, mode: str | None = None, session_id: str | None = None):
         if not self.pet.isVisible():
             self.pet.show()
+        self.agent.hide()
         if session_id and session_id != self.chat.session.get("id"):
             self.chat.load_session(session_id)
         if mode:
@@ -191,6 +204,27 @@ class HuaHuaApp(QObject):
             self._position_chat()
         self.chat.show_panel()
         self._update_tray_tip()
+
+    def open_agent(self):
+        if not self.pet.isVisible():
+            self.pet.show()
+        self.chat.hide()
+        if not self.agent.isVisible():
+            self._position_agent()
+        self.agent.show_panel()
+        self._update_tray_tip()
+
+    def _position_agent(self):
+        screen = QGuiApplication.screenAt(self.pet.geometry().center()) or QGuiApplication.primaryScreen()
+        g = screen.availableGeometry()
+        w, h = self.agent.width(), self.agent.height()
+        x = self.pet.x() - w - 4
+        if x < g.left() + 8:
+            x = max(g.left() + 8, min(self.pet.x() + self.pet.width() + 4, g.right() - w - 8))
+        if x + w > g.right() - 8:
+            x = max(g.left() + 8, g.right() - w - 8)
+        y = max(g.top() + 8, min(self.pet.y() + self.pet.height() - h + 20, g.bottom() - h - 8))
+        self.agent.move(x, y)
 
     def _position_chat(self):
         screen = QGuiApplication.screenAt(self.pet.geometry().center()) or QGuiApplication.primaryScreen()
@@ -223,6 +257,8 @@ class HuaHuaApp(QObject):
         if payload.startswith("session:"):
             sid = payload.split(":", 1)[1]
             self.open_chat(session_id=sid)
+        elif payload.startswith("agent"):
+            self.open_agent()
         else:
             self.open_chat()
 
@@ -243,9 +279,13 @@ class HuaHuaApp(QObject):
             except Exception:
                 icon = ""
         self._play_chime()
+        approval = payload.startswith("agent-approval")
         if self.pet.isVisible():
-            self.pet.notify(title, subtitle, icon=icon, payload=payload, kind="完成", duration=7200)
-            if self.pet.state not in ("sleep",):
+            self.pet.notify(
+                title, subtitle, icon=icon, payload=payload,
+                kind="确认" if approval else "完成", duration=9000 if approval else 7200,
+            )
+            if not approval and self.pet.state not in ("sleep",):
                 self.pet.set_state("success", 1700)
                 QTimer.singleShot(1800, lambda: self.pet.set_state("idle"))
 
@@ -267,6 +307,8 @@ class HuaHuaApp(QObject):
         self.pet.apply_config()
         self.pet.config = self.config
         self.chat.config = self.config
+        self.agent.config = self.config
+        self.agent.apply_config()
         self.chat.edit.set_enter_send(self.config.get("behavior.enter_to_send", True))
         self.chat._refresh_profile_badge()
         self.chat._update_status()
@@ -369,6 +411,7 @@ class HuaHuaApp(QObject):
             self.config.set("ui.last_session", self.chat.session.get("id"))
             self.config.save()
             self.chat.shutdown()
+            self.agent.shutdown()
             self.history.save()
             self.pet.close()
             self.tray.hide()

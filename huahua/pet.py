@@ -227,6 +227,7 @@ class SpeechBubble(QWidget):
 
 class PetWindow(QWidget):
     chat_requested = Signal()
+    agent_requested = Signal()
     mode_requested = Signal(str)
     settings_requested = Signal()
     hide_requested = Signal()
@@ -658,6 +659,8 @@ class PetWindow(QWidget):
         )
         a = menu.addAction("和我聊聊")
         a.triggered.connect(self.chat_requested.emit)
+        a = menu.addAction("让华华干活…")
+        a.triggered.connect(self.agent_requested.emit)
         a = menu.addAction("画一张图")
         a.triggered.connect(lambda: self.mode_requested.emit("image"))
         a = menu.addAction("截图问问")

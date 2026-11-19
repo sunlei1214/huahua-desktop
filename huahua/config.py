@@ -107,6 +107,12 @@ def default_config() -> dict[str, Any]:
             "max_history": 30,
             "save_history": True,
         },
+        "mothx": {
+            "runtime_path": "",
+            "workspace": "",
+            "mode": "agent",
+            "model": "",
+        },
         "behavior": {
             "notify": True,
             "sound": True,

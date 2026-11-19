@@ -15,3 +15,6 @@ acl-recovery/
 华华.exe
 小织.exe
 小华.exe
+
+# MothX sidecar 运行时（约 60 MB，从 GitHub Releases 获取）
+runtime/
