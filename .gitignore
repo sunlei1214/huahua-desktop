@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+artifacts_test/
+*.spec
+*.log
+
+# 本地密钥与个人素材，绝不进仓库
+工作资料.txt
+熙熙小胖墩/
+acl-recovery/
+
+# 打包产物（体积大，按需自己构建）
+华华.exe
+小织.exe
+小华.exe
