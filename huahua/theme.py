@@ -326,6 +326,15 @@ def qss() -> str:
         color: {PEACH_DEEP};
     }}
     QPushButton#Segment:pressed {{ background: {PEACH_SOFT}; }}
+    QPushButton#ThoughtToggle {{
+        background: transparent;
+        border: none;
+        color: {MUTED};
+        padding: 2px 0;
+        font-size: 10px;
+        text-align: left;
+    }}
+    QPushButton#ThoughtToggle:hover {{ color: {PEACH_DEEP}; }}
     QPushButton#Chip {{
         background: white;
         color: {INK_SOFT};

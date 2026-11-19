@@ -53,6 +53,7 @@ class AgentController(QObject):
         self.config_options: list[dict[str, Any]] = []
         self.selected_model = str(config.get("mothx.model", "") or "")
         self.selected_mode = str(config.get("mothx.mode", "agent") or "agent")
+        self.selected_thinking = str(config.get("mothx.thinking", "medium") or "medium")
         self.running = False
         self._initializing = False
         self._init_waiters: list[Callable[[str], None]] = []
@@ -191,6 +192,8 @@ class AgentController(QObject):
             wanted.append(("mode", self.selected_mode))
         if self.selected_model:
             wanted.append(("model", self.selected_model))
+        if self.selected_thinking:
+            wanted.append(("thinking_level", self.selected_thinking))
         if not wanted:
             if callback:
                 callback("")
@@ -432,6 +435,17 @@ class AgentController(QObject):
             self.client.request(
                 "session/set_config_option",
                 {"sessionId": self.session_id, "configId": "mode", "value": mode},
+                lambda result, err: self._on_config_option(result, err),
+            )
+
+    def set_thinking(self, level: str) -> None:
+        self.selected_thinking = level
+        self.config.set("mothx.thinking", level)
+        self.config.save()
+        if self.client and self.session_id:
+            self.client.request(
+                "session/set_config_option",
+                {"sessionId": self.session_id, "configId": "thinking_level", "value": level},
                 lambda result, err: self._on_config_option(result, err),
             )
 

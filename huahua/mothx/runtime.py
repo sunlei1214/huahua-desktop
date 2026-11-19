@@ -28,7 +28,8 @@ MODEL_CHOICES: list[dict[str, Any]] = [
         "name": "DeepSeek V4.1 Flash 1017",
         "contextWindow": 1_000_000,
         "maxTokens": 384_000,
-        "reasoning": False,
+        "reasoning": True,
+        "compat": {"thinkingFormat": "deepseek-v4.1"},
         "input": ["text", "image"],
         "badges": ["工具", "视觉", "长上下文"],
     },
@@ -76,7 +77,7 @@ class MothXRuntime:
             "defaultProvider": "moark",
             "defaultModel": default_model or self.models[0]["id"],
             "defaultMode": "agent",
-            "defaultThinkingLevel": "off",
+            "defaultThinkingLevel": "medium",
             "providers": {
                 "moark": {
                     "baseUrl": (base_url or "https://api.moark.com/v1").rstrip("/"),

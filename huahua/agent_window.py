@@ -279,6 +279,8 @@ class AgentRunView(QFrame):
         super().__init__(parent)
         self.character = theme.character_key(character)
         self._raw = ""
+        self._thought_raw = ""
+        self._thought_open = False
         self._streaming = True
         self._tools: dict[str, ToolRow] = {}
         self._plan: PlanCard | None = None
@@ -301,6 +303,31 @@ class AgentRunView(QFrame):
         head.addWidget(self.status)
         head.addStretch(1)
         root.addLayout(head)
+
+        self.thought_btn = QPushButton("▸ 思考过程")
+        self.thought_btn.setObjectName("ThoughtToggle")
+        self.thought_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.thought_btn.clicked.connect(self.toggle_thought)
+        self.thought_btn.hide()
+        root.addWidget(self.thought_btn)
+        self.thoughtb = NoWheelTextBrowser()
+        self.thoughtb.setFrameShape(QFrame.Shape.NoFrame)
+        self.thoughtb.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.thoughtb.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.thoughtb.setStyleSheet(
+            "QTextBrowser{background:#FBF3ED;border:1px solid #F0DFD4;"
+            "border-radius:10px;padding:7px;color:#826C62;}"
+        )
+        self.thoughtb.setFixedWidth(466)
+        self.thoughtb.setFont(font(9))
+        self.thoughtb.document().setDocumentMargin(0)
+        self.thoughtb.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
+        self.thoughtb.hide()
+        root.addWidget(self.thoughtb)
+
         self.textb = NoWheelTextBrowser()
         self.textb.setFrameShape(QFrame.Shape.NoFrame)
         self.textb.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -327,6 +354,41 @@ class AgentRunView(QFrame):
         self.status.setText(text)
         self.status.setStyleSheet(f"color:{color};font-size:10px;")
 
+    def append_thought(self, text: str):
+        if not text:
+            return
+        self._thought_raw += text
+        # Open on the first reasoning delta so the process is visible by
+        # default; the user can collapse it with one click.
+        if not self._thought_open:
+            self._thought_open = True
+            self.thoughtb.show()
+        self.thought_btn.show()
+        self.thought_btn.setText("▾ 思考中…")
+        self._render_thought()
+        if self._streaming:
+            bar = self.thoughtb.verticalScrollBar()
+            QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+
+    def _render_thought(self):
+        safe = html.escape(self._thought_raw).replace("\n", "<br>")
+        self.thoughtb.setHtml(
+            f"<div style='color:#826C62;font-size:11px;line-height:1.55'>{safe}</div>"
+        )
+        doc = self.thoughtb.document()
+        doc.setTextWidth(450)
+        h = max(42, int(doc.size().height() + 16))
+        self.thoughtb.setFixedHeight(min(h, 260))
+
+    def toggle_thought(self):
+        self._thought_open = not self._thought_open
+        self.thoughtb.setVisible(self._thought_open)
+        if self._streaming:
+            self.thought_btn.setText("▾ 思考中…" if self._thought_open else "▸ 思考中…")
+        else:
+            self.thought_btn.setText("▾ 思考过程" if self._thought_open else "▸ 思考过程")
+        QTimer.singleShot(0, self._resize)
+
     def append_text(self, text: str):
         self._raw += text
         self.textb.show()
@@ -337,6 +399,8 @@ class AgentRunView(QFrame):
         self._streaming = False
         if text is not None:
             self._raw = text
+        if self._thought_raw:
+            self.thought_btn.setText("▾ 思考过程" if self._thought_open else "▸ 思考过程")
         if self._raw:
             self.textb.setHtml(md_to_html(self._raw))
             self._resize()
@@ -522,6 +586,25 @@ class AgentWindow(QWidget):
         self._last_mode = "agent"
         row.addWidget(self.mode_switch)
         cl.addLayout(row)
+        think_row = QHBoxLayout()
+        think_row.setSpacing(6)
+        think_label = QLabel("思考")
+        think_label.setObjectName("Tiny")
+        think_row.addWidget(think_label)
+        self.thinking_combo = QComboBox()
+        self.thinking_combo.addItem("关闭", "off")
+        self.thinking_combo.addItem("低", "low")
+        self.thinking_combo.addItem("中", "medium")
+        self.thinking_combo.addItem("高", "high")
+        self.thinking_combo.setFixedWidth(84)
+        self.thinking_combo.setToolTip("MothX 思考等级；中/高会显示推理过程，也会更慢")
+        self.thinking_combo.currentIndexChanged.connect(self._thinking_changed)
+        think_row.addWidget(self.thinking_combo)
+        think_hint = QLabel("过程会显示在对话里，可折叠")
+        think_hint.setObjectName("Tiny")
+        think_row.addWidget(think_hint)
+        think_row.addStretch(1)
+        cl.addLayout(think_row)
         ol.addWidget(self.ctx_card)
         root.addWidget(ctx_outer)
 
@@ -676,6 +759,11 @@ class AgentWindow(QWidget):
         mode = str(self.config.get("mothx.mode", "agent") or "agent")
         self.mode_switch.set_active(mode)
         self._last_mode = mode
+        thinking = str(self.config.get("mothx.thinking", "medium") or "medium")
+        self.thinking_combo.blockSignals(True)
+        idx = self.thinking_combo.findData(thinking)
+        self.thinking_combo.setCurrentIndex(max(0, idx))
+        self.thinking_combo.blockSignals(False)
         self._refresh_workspace()
 
     def _refresh_workspace(self):
@@ -713,6 +801,11 @@ class AgentWindow(QWidget):
         model = self.model_combo.currentData()
         if model:
             self.controller.set_model(str(model))
+
+    def _thinking_changed(self, _idx: int):
+        level = str(self.thinking_combo.currentData() or "medium")
+        self.controller.set_thinking(level)
+        self.show_toast(f"思考等级：{self.thinking_combo.currentText()}")
 
     def _mode_changed(self, mode: str):
         if mode == "yolo" and self._last_mode != "yolo":
@@ -960,9 +1053,12 @@ class AgentWindow(QWidget):
             self._run.append_text(text)
             self._scroll_bottom()
 
-    def _on_thought(self, _text: str):
+    def _on_thought(self, text: str):
         if self._run and not self._finalized:
+            self._run.append_thought(text)
             self._run.set_status("思考中…", MUTED)
+            self.pet_state.emit("thinking")
+            self._scroll_bottom()
 
     def _on_tool(self, info: dict[str, Any]):
         if self._run:

@@ -112,6 +112,7 @@ def default_config() -> dict[str, Any]:
             "workspace": "",
             "mode": "agent",
             "model": "",
+            "thinking": "medium",
         },
         "behavior": {
             "notify": True,
