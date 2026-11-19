@@ -4,6 +4,8 @@
 
 **GitHub：** <https://github.com/sunlei1214/huahua-desktop>
 
+**MothX Agent 集成设计稿：** [docs/MOTHX_AGENT_DESIGN.md](docs/MOTHX_AGENT_DESIGN.md)
+
 ![华华和熙熙预览](docs/华华熙熙预览.png)
 
 ## 两个角色，随时切换
