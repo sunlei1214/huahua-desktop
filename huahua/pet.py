@@ -391,6 +391,8 @@ class PetWindow(QWidget):
 
     def react(self, kind: str = "head"):
         self._touch()
+        if self._busy:
+            return
         state = "react-head" if kind == "head" else "react-belly"
         self._set_state(state, 1700 if kind == "head" else 1100)
         lines = {
@@ -591,7 +593,8 @@ class PetWindow(QWidget):
             gp = e.globalPosition().toPoint()
             if not self._dragging and (gp - self._press_pos).manhattanLength() > 5:
                 self._dragging = True
-                self._set_state("drag")
+                if not self._busy:
+                    self._set_state("drag")
             if self._dragging:
                 self.move(self._win_origin + (gp - self._drag_origin))
                 self.bubble.hide()
@@ -603,7 +606,8 @@ class PetWindow(QWidget):
         if self._dragging:
             self._dragging = False
             self._clamp_to_screen()
-            self._set_state("idle")
+            if not self._busy and self.state not in ("success", "failure"):
+                self._set_state("idle")
             self.config.set("appearance.position", [self.x(), self.y()])
             self.config.save()
             self.moved.emit()
@@ -620,7 +624,8 @@ class PetWindow(QWidget):
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self._touch()
-            self._set_state("greet", 1500)
+            if not self._busy:
+                self._set_state("greet", 1500)
             self.chat_requested.emit()
             e.accept()
 
@@ -630,23 +635,27 @@ class PetWindow(QWidget):
             paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
             if paths:
                 self._touch()
-                self._set_state("drag", 60000)
+                if not self._busy:
+                    self._set_state("drag", 60000)
                 self.show_bubble("松手，我看看这个～", "图片、文档、视频都能读", 2400)
                 e.acceptProposedAction()
                 return
         e.ignore()
 
     def dragLeaveEvent(self, e):
-        self._set_state("idle")
+        if not self._busy:
+            self._set_state("idle")
         e.accept()
 
     def dropEvent(self, e):
-        self._set_state("idle")
+        if not self._busy:
+            self._set_state("idle")
         paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
         if paths:
             e.acceptProposedAction()
             self.files_dropped.emit(paths)
-            self._set_state("waiting", 1200)
+            if not self._busy:
+                self._set_state("waiting", 1200)
 
     # ------------------------------------------------------------------
     def _show_menu(self, gp: QPoint):
