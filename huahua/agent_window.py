@@ -8,7 +8,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeyEvent, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QKeyEvent,
+    QPixmap,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -169,7 +178,15 @@ class ToolRow(QFrame):
                 if raw.get(key):
                     detail = f"{key}: {raw[key]}"
                     break
-        self.setToolTip(detail or json.dumps(raw, ensure_ascii=False)[:800])
+        if not detail and isinstance(raw, dict):
+            # rawOutput can be a whole terminal transcript.  Never serialize
+            # all of it just to build a 800-char tooltip.
+            parts = []
+            for key, value in list(raw.items())[:4]:
+                text = str(value)
+                parts.append(f"{key}: {text[:160]}")
+            detail = "\n".join(parts)
+        self.setToolTip(detail[:800])
 
 
 class PlanCard(QFrame):
@@ -280,8 +297,15 @@ class AgentRunView(QFrame):
         self.character = theme.character_key(character)
         self._raw = ""
         self._thought_raw = ""
+        self._pending_text = ""
+        self._pending_thought = ""
         self._thought_open = False
         self._streaming = True
+        self._last_height_update = 0.0
+        self._stream_timer = QTimer(self)
+        self._stream_timer.setSingleShot(True)
+        self._stream_timer.setInterval(33)
+        self._stream_timer.timeout.connect(self._flush_streams)
         self._tools: dict[str, ToolRow] = {}
         self._plan: PlanCard | None = None
         self._approval: ApprovalCard | None = None
@@ -327,6 +351,9 @@ class AgentRunView(QFrame):
         )
         self.thoughtb.hide()
         root.addWidget(self.thoughtb)
+        self._thought_fmt = QTextCharFormat()
+        self._thought_fmt.setForeground(QColor("#826C62"))
+        self._thought_fmt.setFont(font(9))
 
         self.textb = NoWheelTextBrowser()
         self.textb.setFrameShape(QFrame.Shape.NoFrame)
@@ -357,60 +384,92 @@ class AgentRunView(QFrame):
     def append_thought(self, text: str):
         if not text:
             return
-        self._thought_raw += text
         # Open on the first reasoning delta so the process is visible by
         # default; the user can collapse it with one click.
-        if not self._thought_open:
+        if not self._thought_raw and not self._pending_thought and not self._thought_open:
             self._thought_open = True
             self.thoughtb.show()
+        self._pending_thought += text
         self.thought_btn.show()
-        self.thought_btn.setText("▾ 思考中…")
-        self._render_thought()
-        if self._streaming:
-            bar = self.thoughtb.verticalScrollBar()
-            QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+        self.thought_btn.setText("▾ 思考中…" if self._thought_open else "▸ 思考中…")
+        if not self._stream_timer.isActive():
+            self._stream_timer.start()
 
-    def _render_thought(self):
-        safe = html.escape(self._thought_raw).replace("\n", "<br>")
-        self.thoughtb.setHtml(
-            f"<div style='color:#826C62;font-size:11px;line-height:1.55'>{safe}</div>"
-        )
-        doc = self.thoughtb.document()
-        doc.setTextWidth(450)
-        h = max(42, int(doc.size().height() + 16))
-        self.thoughtb.setFixedHeight(min(h, 260))
+    def _flush_streams(self, force: bool = False):
+        thought = self._pending_thought
+        text = self._pending_text
+        self._pending_thought = ""
+        self._pending_text = ""
+        if thought:
+            self._thought_raw += thought
+            cursor = QTextCursor(self.thoughtb.document())
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertText(thought, self._thought_fmt)
+        if text:
+            self._raw += text
+            self.textb.show()
+            cursor = QTextCursor(self.textb.document())
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertText(text)
+        if thought or text:
+            self._update_heights(force=force)
+            if self._thought_open:
+                bar = self.thoughtb.verticalScrollBar()
+                bar.setValue(bar.maximum())
+
+    def _update_heights(self, force: bool = False):
+        now = time.monotonic()
+        if not force and now - self._last_height_update < 0.08:
+            return
+        self._last_height_update = now
+        if self._thought_raw:
+            doc = self.thoughtb.document()
+            doc.setTextWidth(450)
+            h = max(42, int(doc.size().height() + 16))
+            self.thoughtb.setFixedHeight(min(h, 260))
+        if self._raw:
+            doc = self.textb.document()
+            doc.setTextWidth(466)
+            h = max(20, int(doc.size().height() + 4))
+            self.textb.setFixedHeight(min(h, 1600))
 
     def toggle_thought(self):
+        self._flush_streams(force=True)
         self._thought_open = not self._thought_open
         self.thoughtb.setVisible(self._thought_open)
         if self._streaming:
             self.thought_btn.setText("▾ 思考中…" if self._thought_open else "▸ 思考中…")
         else:
             self.thought_btn.setText("▾ 思考过程" if self._thought_open else "▸ 思考过程")
-        QTimer.singleShot(0, self._resize)
+        QTimer.singleShot(0, lambda: self._update_heights(force=True))
 
     def append_text(self, text: str):
-        self._raw += text
-        self.textb.show()
-        self.textb.setPlainText(self._raw)
-        self._resize()
+        if not text:
+            return
+        self._pending_text += text
+        if not self._stream_timer.isActive():
+            self._stream_timer.start()
 
     def finalize(self, text: str | None = None):
+        self._stream_timer.stop()
+        self._flush_streams(force=True)
         self._streaming = False
         if text is not None:
             self._raw = text
         if self._thought_raw:
             self.thought_btn.setText("▾ 思考过程" if self._thought_open else "▸ 思考过程")
         if self._raw:
-            self.textb.setHtml(md_to_html(self._raw))
-            self._resize()
+            # Markdown rendering is intentionally skipped for very large
+            # transcripts; setHtml on a 100k+ document can freeze the pet.
+            if len(self._raw) <= 80_000:
+                self.textb.setHtml(md_to_html(self._raw))
+            else:
+                self.textb.setPlainText(self._raw)
+            self._update_heights(force=True)
             self.set_status("完成", "#4FAE86")
 
     def _resize(self):
-        doc = self.textb.document()
-        doc.setTextWidth(466)
-        h = max(20, int(doc.size().height() + 4))
-        self.textb.setFixedHeight(min(h, 1600))
+        self._update_heights(force=True)
 
     def add_tool(self, info: dict[str, Any]):
         tid = info.get("id") or ""
@@ -469,6 +528,7 @@ class AgentWindow(QWidget):
         self._busy = False
         self._finalized = False
         self._minimized = False
+        self._last_pet_state = ""
         self._pending_choice: dict[str, Any] | None = None
         self._header_drag: QPoint | None = None
         self._header_origin: QPoint | None = None
@@ -487,6 +547,10 @@ class AgentWindow(QWidget):
         self.setWindowIcon(QIcon(str(theme.character_icon_path(self.character))))
         self._build()
         self._connect()
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setSingleShot(True)
+        self._scroll_timer.setInterval(60)
+        self._scroll_timer.timeout.connect(self._do_scroll_bottom)
         self.drop_overlay = DropOverlay(self)
         self.reload_runtime()
         self.apply_character()
@@ -832,7 +896,7 @@ class AgentWindow(QWidget):
                 return
         self._last_mode = mode
         self.controller.set_mode(mode)
-        self.pet_state.emit("waiting" if mode == "plan" else "thinking")
+        self._pet("waiting" if mode == "plan" else "thinking")
 
     # ------------------------------------------------------------------
     def _view_changed(self, view: str):
@@ -908,7 +972,7 @@ class AgentWindow(QWidget):
         self.send_btn.setEnabled(False)
         self.stop_btn.show()
         self._scroll_bottom()
-        self.pet_state.emit("thinking")
+        self._pet("thinking")
 
         def go(session_result: dict[str, Any] | None, err: str):
             if err:
@@ -1007,7 +1071,7 @@ class AgentWindow(QWidget):
         self.choice_resolved.emit()
         self._finalized = True
         self._end_busy("idle")
-        self.pet_state.emit("idle")
+        self._pet("idle")
 
     def new_task(self):
         if self._busy:
@@ -1026,7 +1090,7 @@ class AgentWindow(QWidget):
         self._rebuild_attachments()
         self.empty.show()
         self._end_busy("idle")
-        self.pet_state.emit("idle")
+        self._pet("idle")
         self.show_toast("新任务，工作区不变")
 
     def _end_busy(self, state: str = "idle"):
@@ -1035,6 +1099,11 @@ class AgentWindow(QWidget):
         self.stop_btn.hide()
         self.status_label.setText("● 执行引擎")
         self.status_label.setStyleSheet(f"color:{TEAL_DEEP};font-size:10px;")
+
+    def _pet(self, state: str):
+        if state != self._last_pet_state:
+            self._last_pet_state = state
+            self.pet_state.emit(state)
 
     # ------------------------------------------------------------------
     def _on_state(self, state: str, message: str):
@@ -1050,15 +1119,15 @@ class AgentWindow(QWidget):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color:{color};font-size:10px;")
         if state == "working":
-            self.pet_state.emit("thinking")
+            self._pet("thinking")
             if self._run:
                 self._run.set_status("执行中…", color)
         elif state == "waiting":
-            self.pet_state.emit("waiting")
+            self._pet("waiting")
         elif state == "starting":
-            self.pet_state.emit("thinking")
+            self._pet("thinking")
         elif state == "error":
-            self.pet_state.emit("failure")
+            self._pet("failure")
 
     def _on_run_started(self):
         if self._run:
@@ -1073,14 +1142,14 @@ class AgentWindow(QWidget):
         if self._run and not self._finalized:
             self._run.append_thought(text)
             self._run.set_status("思考中…", MUTED)
-            self.pet_state.emit("thinking")
+            self._pet("thinking")
             self._scroll_bottom()
 
     def _on_tool(self, info: dict[str, Any]):
         if self._run:
             self._run.add_tool(info)
             self._scroll_bottom()
-        self.pet_state.emit("thinking")
+        self._pet("thinking")
 
     def _on_plan(self, entries: list[dict[str, Any]]):
         if self._run:
@@ -1107,7 +1176,7 @@ class AgentWindow(QWidget):
             "options": data.get("options") or [],
         }
         self._scroll_bottom()
-        self.pet_state.emit("waiting")
+        self._pet("waiting")
         self.choice_requested.emit(self._pending_choice)
         self.notify_requested.emit("需要你确认", str(data.get("title") or f"{theme.character_name(self.character)}想执行一个操作"), "", "agent-approval")
 
@@ -1123,7 +1192,7 @@ class AgentWindow(QWidget):
         # While minimized, answer through the pet's choice bubbles instead of
         # forcing a modal dialog to open on top of the task window.
         if self._minimized and options:
-            self.pet_state.emit("waiting")
+            self._pet("waiting")
             self.choice_requested.emit(self._pending_choice)
             return
         answer = ""
@@ -1139,7 +1208,7 @@ class AgentWindow(QWidget):
         self._pending_choice = None
         self.choice_resolved.emit()
         self.controller.answer_question(data.get("request_id"), answer)
-        self.pet_state.emit("thinking")
+        self._pet("thinking")
 
     def answer_choice(self, request_id: Any, kind: str, option_id: str) -> None:
         """Resolve a pending permission/question from the pet HUD."""
@@ -1149,7 +1218,7 @@ class AgentWindow(QWidget):
             self.controller.answer_question(request_id, option_id)
         self._pending_choice = None
         self.choice_resolved.emit()
-        self.pet_state.emit("thinking")
+        self._pet("thinking")
         if self._run:
             self._run.set_status("继续执行…" if option_id else "已拒绝", MUTED)
 
@@ -1166,12 +1235,12 @@ class AgentWindow(QWidget):
         self._end_busy()
         self._pending_choice = None
         self.choice_resolved.emit()
-        self.pet_state.emit("success" if reason != "cancelled" else "idle")
+        self._pet("success" if reason != "cancelled" else "idle")
         if reason != "cancelled":
             self.notify_requested.emit(
                 "任务完成", f"点我看看{theme.character_name(self.character)}做了什么", "", "agent"
             )
-            QTimer.singleShot(1800, lambda: self.pet_state.emit("idle"))
+            QTimer.singleShot(1800, lambda: self._pet("idle"))
         self._finalized = True
         self._scroll_bottom()
 
@@ -1190,15 +1259,19 @@ class AgentWindow(QWidget):
         self._end_busy()
         self.status_label.setText("● 出错")
         self.status_label.setStyleSheet(f"color:{DANGER};font-size:10px;")
-        self.pet_state.emit("failure")
+        self._pet("failure")
         self._finalized = True
         self.notify_requested.emit("任务没跑通", message[:50], "", "agent")
-        QTimer.singleShot(1800, lambda: self.pet_state.emit("idle"))
+        QTimer.singleShot(1800, lambda: self._pet("idle"))
         self._scroll_bottom()
 
     def _scroll_bottom(self):
+        if not self._scroll_timer.isActive():
+            self._scroll_timer.start()
+
+    def _do_scroll_bottom(self):
         bar = self.scroll.verticalScrollBar()
-        QTimer.singleShot(40, lambda: bar.setValue(bar.maximum()))
+        bar.setValue(bar.maximum())
 
     def show_toast(self, text: str, ms: int = 2400):
         if self.toast:
