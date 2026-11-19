@@ -44,6 +44,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QDialog,
     QFileDialog,
     QFrame,
@@ -110,6 +111,48 @@ class IconButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         if tooltip:
             self.setToolTip(tooltip)
+
+
+class SegmentedControl(QFrame):
+    """Shared top-level switch (会话 / 执行) and compact mode switch."""
+
+    changed = Signal(str)
+
+    def __init__(
+        self,
+        options: list[tuple[str, str]],
+        active: str = "",
+        parent=None,
+        compact: bool = False,
+    ):
+        super().__init__(parent)
+        self.setObjectName("Segmented")
+        self.options = options
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.buttons: dict[str, QPushButton] = {}
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(3, 3, 3, 3)
+        lay.setSpacing(2)
+        for i, (label, value) in enumerate(options):
+            b = QPushButton(label)
+            b.setObjectName("Segment")
+            b.setCheckable(True)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setFixedHeight(25 if compact else 27)
+            b.setMinimumWidth(42 if compact else 46)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self.group.addButton(b, i)
+            lay.addWidget(b)
+            self.buttons[value] = b
+        self.group.idClicked.connect(lambda i: self.changed.emit(self.options[i][1]))
+        self.set_active(active or (options[0][1] if options else ""))
+
+    def set_active(self, value: str) -> None:
+        btn = self.buttons.get(value)
+        if btn is None:
+            return
+        btn.setChecked(True)
 
 
 class Avatar(QWidget):
@@ -235,10 +278,10 @@ class EmptyState(QWidget):
         self.art = QLabel()
         self.art.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pm = theme.pixmap("idle", self.character).scaled(
-            160, 160, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
         self.art.setPixmap(pm)
-        self.art.setFixedHeight(166)
+        self.art.setFixedHeight(156)
         self._layout.addWidget(self.art)
 
         self.title = QLabel("在呢，今天想织点什么？")
@@ -253,7 +296,7 @@ class EmptyState(QWidget):
         self._layout.addWidget(self.sub)
 
         self.chips_host = QWidget()
-        self.flow = FlowLayout(self.chips_host, margin=0, spacing=8)
+        self.flow = FlowLayout(self.chips_host, margin=0, spacing=4)
         self._layout.addWidget(self.chips_host)
         self._chips: list[Chip] = []
         self.set_mode("chat")

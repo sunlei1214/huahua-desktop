@@ -193,6 +193,11 @@ def qss() -> str:
         border: 1px solid #CBE9E4;
         border-radius: 18px;
     }}
+    QFrame#ContextCard {{
+        background: #FFFBF8;
+        border: 1px solid #F0DFD4;
+        border-radius: 15px;
+    }}
     QLabel#Title {{
         font-size: 18px;
         font-weight: 700;
@@ -293,10 +298,34 @@ def qss() -> str:
     }}
     QPushButton#ModeTab:hover {{ background: {CREAM_2}; color: {INK_SOFT}; }}
     QPushButton#ModeTab:checked {{
-        background: white;
+        background: #FFFBF8;
         color: {PEACH_DEEP};
-        border-color: #F4D4C6;
+        border-color: #F1D3C4;
     }}
+    QFrame#Segmented {{
+        background: #F7EDE7;
+        border: 1px solid #EED9CD;
+        border-radius: 12px;
+    }}
+    QPushButton#Segment {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        color: #9A8178;
+        padding: 3px 8px;
+        font-size: 10px;
+        font-weight: 600;
+    }}
+    QPushButton#Segment:hover {{
+        background: #FCF5F0;
+        color: {INK_SOFT};
+    }}
+    QPushButton#Segment:checked {{
+        background: white;
+        border-color: #F0D4C7;
+        color: {PEACH_DEEP};
+    }}
+    QPushButton#Segment:pressed {{ background: {PEACH_SOFT}; }}
     QPushButton#Chip {{
         background: white;
         color: {INK_SOFT};
@@ -330,7 +359,7 @@ def qss() -> str:
         background: white;
         border: 1px solid {LINE};
         border-radius: 11px;
-        padding: 8px 10px;
+        padding: 7px 10px;
         selection-background-color: {PEACH};
         selection-color: white;
     }}
@@ -338,13 +367,19 @@ def qss() -> str:
         border-color: {PEACH};
         background: #FFFEFC;
     }}
+    QComboBox {{ padding-right: 26px; }}
+    QComboBox::drop-down {{ border: none; width: 24px; }}
+    QComboBox::down-arrow {{
+        image: url("{ASSETS.as_posix()}/icons/chevron_down.png");
+        width: 10px;
+        height: 10px;
+    }}
     QPlainTextEdit#Composer {{
         background: transparent;
         border: none;
         padding: 2px 2px;
         font-size: 13px;
     }}
-    QComboBox::drop-down {{ border: none; width: 22px; }}
     QComboBox QAbstractItemView {{
         background: white;
         border: 1px solid {LINE};
@@ -405,6 +440,14 @@ def qss() -> str:
     QMenu::item:selected {{ background: {PEACH_SOFT}; color: {PEACH_DEEP}; }}
     QMenu::separator {{ height: 1px; background: {LINE}; margin: 5px 8px; }}
     QMenu::indicator {{ width: 15px; height: 15px; }}
+    QToolTip {{
+        background: #5A423A;
+        color: #FFF9F4;
+        border: none;
+        border-radius: 7px;
+        padding: 6px 8px;
+        font-size: 11px;
+    }}
     QFrame#Divider {{ background: {LINE}; max-height: 1px; border: none; }}
     QLabel#BubbleText {{
         color: {INK};

@@ -219,6 +219,9 @@ class HuaHuaApp(QObject):
         screen = QGuiApplication.screenAt(self.pet.geometry().center()) or QGuiApplication.primaryScreen()
         g = screen.availableGeometry()
         w, h = self.agent.width(), self.agent.height()
+        w = min(w, g.width() - 16)
+        h = min(h, g.height() - 16)
+        self.agent.resize(w, h)
         x = self.pet.x() - w - 4
         if x < g.left() + 8:
             x = max(g.left() + 8, min(self.pet.x() + self.pet.width() + 4, g.right() - w - 8))

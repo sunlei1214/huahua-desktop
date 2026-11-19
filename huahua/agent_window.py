@@ -51,8 +51,11 @@ from .theme import (
 from .widgets import (
     AttachmentChip,
     Avatar,
+    Chip,
+    FlowLayout,
     IconButton,
     NoWheelTextBrowser,
+    SegmentedControl,
     ToastLabel,
     md_to_html,
 )
@@ -84,7 +87,7 @@ class ToolRow(QFrame):
         self.dot.setStyleSheet("color:#C7B8B0;font-size:9px;")
         lay.addWidget(self.dot)
         self.title = QLabel()
-        self.title.setFont(font(9, QFont.Weight.DemiBold))
+        self.title.setFont(font(10, QFont.Weight.DemiBold))
         self.title.setStyleSheet(f"color:{INK_SOFT};")
         lay.addWidget(self.title, 1)
         self.meta = QLabel()
@@ -104,7 +107,7 @@ class ToolRow(QFrame):
         }.get(kind, kind)
         if title.lower() in ("bash", "shell", "execute"):
             title = kind_label or "运行命令"
-        elif kind_label and kind_label not in title:
+        elif kind_label and kind_label not in title and not title.startswith(kind_label[:2]):
             title = f"{title} · {kind_label}"
         self.title.setText(title)
         status = info.get("status") or "pending"
@@ -137,7 +140,7 @@ class PlanCard(QFrame):
         lay.setContentsMargins(12, 9, 12, 9)
         lay.setSpacing(4)
         title = QLabel("计划")
-        title.setFont(font(9, QFont.Weight.Bold))
+        title.setFont(font(10, QFont.Weight.Bold))
         title.setStyleSheet(f"color:{PEACH_DEEP};")
         lay.addWidget(title)
         self.body = QLabel("")
@@ -172,7 +175,7 @@ class ApprovalCard(QFrame):
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(6)
         title = QLabel("需要你确认")
-        title.setFont(font(9, QFont.Weight.Bold))
+        title.setFont(font(10, QFont.Weight.Bold))
         title.setStyleSheet(f"color:{DANGER};")
         lay.addWidget(title)
         kind = str(data.get("kind") or "")
@@ -186,7 +189,7 @@ class ApprovalCard(QFrame):
         }.get(kind, str(data.get("title") or "工具操作"))
         what = QLabel(kind_label)
         what.setWordWrap(True)
-        what.setFont(font(10, QFont.Weight.DemiBold))
+        what.setFont(font(11, QFont.Weight.DemiBold))
         lay.addWidget(what)
         raw = data.get("raw_input") or {}
         detail = ""
@@ -249,7 +252,7 @@ class AgentRunView(QFrame):
         self.avatar = Avatar(28, True, self.character)
         head.addWidget(self.avatar)
         self.name_label = QLabel(name)
-        self.name_label.setFont(font(9, QFont.Weight.DemiBold))
+        self.name_label.setFont(font(10, QFont.Weight.DemiBold))
         self.name_label.setStyleSheet(f"color:{INK_SOFT};")
         head.addWidget(self.name_label)
         self.status = QLabel("准备中")
@@ -394,10 +397,11 @@ class AgentWindow(QWidget):
         root.setSpacing(0)
 
         header = QFrame()
+        header.setFixedHeight(78)
         hl = QHBoxLayout(header)
         hl.setContentsMargins(18, 13, 14, 8)
         hl.setSpacing(10)
-        self.avatar = Avatar(44, True, self.character)
+        self.avatar = Avatar(46, True, self.character)
         hl.addWidget(self.avatar)
         col = QVBoxLayout()
         col.setSpacing(1)
@@ -415,37 +419,48 @@ class AgentWindow(QWidget):
         self.status_label.setStyleSheet(f"color:{TEAL_DEEP};font-size:10px;")
         col.addWidget(self.status_label)
         hl.addLayout(col, 1)
-        self.session_btn = QPushButton("会话")
-        self.session_btn.setObjectName("Ghost")
-        self.session_btn.setFixedSize(48, 30)
-        self.session_btn.setToolTip("回到聊天 / 生图 / 视频")
-        self.session_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.session_btn.clicked.connect(self.chat_requested.emit)
-        hl.addWidget(self.session_btn)
-        self.new_btn = IconButton("plus", "新任务", 30)
+        self.view_switch = SegmentedControl(
+            [("会话", "chat"), ("任务", "agent")], active="agent", compact=True
+        )
+        self.view_switch.setFixedWidth(104)
+        self.view_switch.changed.connect(self._view_changed)
+        hl.addWidget(self.view_switch)
+        self.new_btn = IconButton("plus", "新任务", 28)
         self.new_btn.clicked.connect(self.new_task)
-        self.settings_btn = IconButton("settings", "设置", 30)
+        self.settings_btn = IconButton("settings", "设置", 28)
         self.settings_btn.clicked.connect(self.settings_requested.emit)
-        self.min_btn = IconButton("minimize", "收起", 30)
-        self.min_btn.clicked.connect(self.hide)
-        self.close_btn = IconButton("close", "收起", 30)
+        self.close_btn = IconButton("close", "收起", 28)
         self.close_btn.clicked.connect(self.hide)
-        for b in (self.session_btn, self.new_btn, self.settings_btn, self.min_btn, self.close_btn):
+        for b in (self.new_btn, self.settings_btn, self.close_btn):
             hl.addWidget(b)
         root.addWidget(header)
         self._header = header
 
         # context bar
-        ctx_wrap = QWidget()
-        cl = QVBoxLayout(ctx_wrap)
-        cl.setContentsMargins(18, 0, 18, 9)
-        cl.setSpacing(5)
+        ctx_outer = QWidget()
+        ol = QVBoxLayout(ctx_outer)
+        ol.setContentsMargins(18, 0, 18, 10)
+        ol.setSpacing(0)
+        self.ctx_card = QFrame()
+        self.ctx_card.setObjectName("ContextCard")
+        cl = QVBoxLayout(self.ctx_card)
+        cl.setContentsMargins(10, 8, 10, 8)
+        cl.setSpacing(6)
+        ws_row = QHBoxLayout()
+        ws_row.setSpacing(6)
         self.workspace_btn = QPushButton("工作区 · 未选择")
         self.workspace_btn.setObjectName("Chip")
         self.workspace_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.workspace_btn.setToolTip("点击更改工作区（只在这个文件夹内读写）")
         self.workspace_btn.clicked.connect(self.choose_workspace)
-        cl.addWidget(self.workspace_btn)
+        ws_row.addWidget(self.workspace_btn, 1)
+        self.change_ws_btn = QPushButton("更改")
+        self.change_ws_btn.setObjectName("Ghost")
+        self.change_ws_btn.setFixedSize(46, 30)
+        self.change_ws_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.change_ws_btn.clicked.connect(self.choose_workspace)
+        ws_row.addWidget(self.change_ws_btn)
+        cl.addLayout(ws_row)
         row = QHBoxLayout()
         row.setSpacing(6)
         self.model_combo = QComboBox()
@@ -456,20 +471,17 @@ class AgentWindow(QWidget):
         mode_label = QLabel("模式")
         mode_label.setObjectName("Tiny")
         row.addWidget(mode_label)
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("执行（逐次审批）", "agent")
-        self.mode_combo.addItem("计划（只读）", "plan")
-        self.mode_combo.addItem("YOLO（完全放开）", "yolo")
-        self.mode_combo.setFixedWidth(150)
-        self.mode_combo.setToolTip("执行：逐次审批；只读计划：不改文件；YOLO：完全放开，不推荐")
-        self.mode_combo.currentIndexChanged.connect(self._mode_changed)
+        self.mode_switch = SegmentedControl(
+            [("执行", "agent"), ("计划", "plan"), ("YOLO", "yolo")], active="agent", compact=True
+        )
+        self.mode_switch.setFixedWidth(166)
+        self.mode_switch.setToolTip("执行：逐次审批；计划：只读；YOLO：完全放开，不推荐")
+        self.mode_switch.changed.connect(self._mode_changed)
         self._last_mode = "agent"
-        row.addWidget(self.mode_combo)
-        arrow = QLabel("▾")
-        arrow.setStyleSheet(f"color:{MUTED};font-size:11px;")
-        row.addWidget(arrow)
+        row.addWidget(self.mode_switch)
         cl.addLayout(row)
-        root.addWidget(ctx_wrap)
+        ol.addWidget(self.ctx_card)
+        root.addWidget(ctx_outer)
 
         # timeline
         self.scroll = QScrollArea()
@@ -549,7 +561,7 @@ class AgentWindow(QWidget):
             w.installEventFilter(self)
             try:
                 for child in w.findChildren(QWidget):
-                    if not isinstance(child, QPushButton):
+                    if not isinstance(child, (QPushButton, SegmentedControl)):
                         child.installEventFilter(self)
             except Exception:
                 pass
@@ -557,11 +569,12 @@ class AgentWindow(QWidget):
     def _build_empty(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(12, 6, 12, 8)
-        lay.setSpacing(8)
+        lay.setContentsMargins(18, 8, 18, 12)
+        lay.setSpacing(10)
+        lay.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.empty_art = QLabel()
         self.empty_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_art.setFixedHeight(150)
+        self.empty_art.setFixedHeight(158)
         lay.addWidget(self.empty_art)
         self.empty_title = QLabel()
         self.empty_title.setObjectName("Title")
@@ -572,16 +585,17 @@ class AgentWindow(QWidget):
         self.empty_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_sub.setWordWrap(True)
         lay.addWidget(self.empty_sub)
+        chips_host = QWidget()
+        self.empty_flow = FlowLayout(chips_host, margin=0, spacing=4)
+        lay.addWidget(chips_host)
         for text in (
             "读一下这个项目，告诉我它是做什么的",
             "找出 3 个可以改进的地方，先不要改代码",
             "帮我整理当前目录里的文档，列一个清单",
         ):
-            b = QPushButton(text)
-            b.setObjectName("Chip")
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b = Chip(text)
             b.clicked.connect(lambda _=False, x=text: self.edit.setPlainText(x))
-            lay.addWidget(b)
+            self.empty_flow.addWidget(b)
         return w
 
     # ------------------------------------------------------------------
@@ -615,12 +629,8 @@ class AgentWindow(QWidget):
             self.model_combo.setCurrentIndex(idx)
         self.model_combo.blockSignals(False)
         mode = str(self.config.get("mothx.mode", "agent") or "agent")
-        self.mode_combo.blockSignals(True)
-        midx = self.mode_combo.findData(mode)
-        if midx >= 0:
-            self.mode_combo.setCurrentIndex(midx)
-        self.mode_combo.blockSignals(False)
-        self._last_mode = str(self.mode_combo.currentData() or "agent")
+        self.mode_switch.set_active(mode)
+        self._last_mode = mode
         self._refresh_workspace()
 
     def _refresh_workspace(self):
@@ -659,8 +669,7 @@ class AgentWindow(QWidget):
         if model:
             self.controller.set_model(str(model))
 
-    def _mode_changed(self, _idx: int):
-        mode = str(self.mode_combo.currentData() or "agent")
+    def _mode_changed(self, mode: str):
         if mode == "yolo" and self._last_mode != "yolo":
             answer = QMessageBox.warning(
                 self,
@@ -671,22 +680,24 @@ class AgentWindow(QWidget):
                 QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
-                self.mode_combo.blockSignals(True)
-                idx = self.mode_combo.findData(self._last_mode)
-                self.mode_combo.setCurrentIndex(max(0, idx))
-                self.mode_combo.blockSignals(False)
+                self.mode_switch.set_active(self._last_mode)
                 return
         self._last_mode = mode
         self.controller.set_mode(mode)
         self.pet_state.emit("waiting" if mode == "plan" else "tool")
 
     # ------------------------------------------------------------------
+    def _view_changed(self, view: str):
+        if view == "chat":
+            self.chat_requested.emit()
+            QTimer.singleShot(0, lambda: self.view_switch.set_active("agent"))
+
     def apply_character(self):
         self.character = self.config.character
         name = theme.character_name(self.character)
         self.avatar.set_character(self.character)
         self.name_label.setText(name)
-        self.setWindowTitle(f"{name} · 执行")
+        self.setWindowTitle(f"{name} · 任务")
         self.setWindowIcon(QIcon(str(theme.character_icon_path(self.character))))
         self.empty_title.setText(f"让{name}帮你干点活")
         self.empty_sub.setText(f"{name}会读文件、查资料、改代码、跑测试；每一步都先经过你。")

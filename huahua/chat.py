@@ -70,6 +70,7 @@ from .widgets import (
     EmptyState,
     IconButton,
     MessageBubble,
+    SegmentedControl,
     ToastLabel,
     glyph_icon,
 )
@@ -262,22 +263,19 @@ class ChatWindow(QWidget):
         title_col.addWidget(self.status_label)
         hl.addLayout(title_col, 1)
 
-        self.agent_btn = QPushButton("执行")
-        self.agent_btn.setObjectName("Ghost")
-        self.agent_btn.setFixedSize(46, 30)
-        self.agent_btn.setFont(font(9, QFont.Weight.DemiBold))
-        self.agent_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.agent_btn.setToolTip("切换到执行任务（MothX Agent）")
-        self.agent_btn.clicked.connect(self.agent_requested.emit)
-        self.new_btn = IconButton("plus", "新对话", 30)
-        self.new_btn.clicked.connect(self.new_chat)
-        self.history_btn = IconButton("history", "历史对话", 30)
+        self.view_switch = SegmentedControl(
+            [("会话", "chat"), ("任务", "agent")], active="chat", compact=True
+        )
+        self.view_switch.setFixedWidth(104)
+        self.view_switch.changed.connect(self._view_changed)
+        hl.addWidget(self.view_switch)
+        self.history_btn = IconButton("history", "历史对话 / 新对话", 28)
         self.history_btn.clicked.connect(self._show_history)
-        self.settings_btn = IconButton("settings", "设置", 30)
+        self.settings_btn = IconButton("settings", "设置", 28)
         self.settings_btn.clicked.connect(self.settings_requested.emit)
-        self.close_btn = IconButton("close", "收起", 30)
+        self.close_btn = IconButton("close", "收起", 28)
         self.close_btn.clicked.connect(self.hide)
-        for b in (self.agent_btn, self.new_btn, self.history_btn, self.settings_btn, self.close_btn):
+        for b in (self.history_btn, self.settings_btn, self.close_btn):
             hl.addWidget(b)
         root.addWidget(self.header)
 
@@ -304,8 +302,13 @@ class ChatWindow(QWidget):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setIcon(glyph_icon(glyph, MUTED, 15))
             b.setIconSize(QSize(14, 14))
+            b.toggled.connect(
+                lambda checked, btn=b, g=glyph: btn.setIcon(
+                    glyph_icon(g, PEACH_DEEP if checked else MUTED, 15)
+                )
+            )
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            b.setMinimumHeight(34)
+            b.setMinimumHeight(36)
             self.tab_group.addButton(b, i)
             tbl.addWidget(b)
             self.tab_buttons[key] = b
@@ -323,7 +326,7 @@ class ChatWindow(QWidget):
         self.timeline = QWidget()
         self.timeline.setStyleSheet("background: transparent;")
         self.tl = QVBoxLayout(self.timeline)
-        self.tl.setContentsMargins(16, 4, 16, 10)
+        self.tl.setContentsMargins(18, 4, 18, 10)
         self.tl.setSpacing(12)
         self.tl.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.empty = EmptyState(self.character)
@@ -408,7 +411,7 @@ class ChatWindow(QWidget):
             w.installEventFilter(self)
             try:
                 for child in w.findChildren(QWidget):
-                    if not isinstance(child, QPushButton):
+                    if not isinstance(child, (QPushButton, SegmentedControl)):
                         child.installEventFilter(self)
             except Exception:
                 pass
@@ -1028,6 +1031,11 @@ class ChatWindow(QWidget):
         self.send_current()
 
     # ------------------------------------------------------------------
+    def _view_changed(self, view: str):
+        if view == "agent":
+            self.agent_requested.emit()
+            QTimer.singleShot(0, lambda: self.view_switch.set_active("chat"))
+
     def new_chat(self):
         if self._busy:
             self.show_toast(f"等{theme.character_name(self.character)}做完手上的事再开新对话")
