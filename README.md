@@ -2,6 +2,8 @@
 
 > 两个住在 Windows 桌面上的小伙伴。点一下打开对话，拖文件给她们看，也能把灵感变成图片和数字人视频。
 
+**GitHub：** <https://github.com/sunlei1214/huahua-desktop>
+
 ![华华和熙熙预览](docs/华华熙熙预览.png)
 
 ## 两个角色，随时切换
