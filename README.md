@@ -73,13 +73,15 @@
 - 任务窗口可以最小化到桌宠：头顶显示省略号思考气泡，审批时变成多个可点的选项气泡；
 - 媒体能力（生图、图生图、数字人）仍然走原来的 MoArk 直连，不受影响。
 
-MothX 运行时是外置 sidecar（约 60 MB），放在：
+MothX 运行时是外置 sidecar（约 60 MB），源码运行时放在：
 
 ```text
 runtime/mothx.exe
 ```
 
 它不提交到 Git 仓库，避免单文件过大；下载地址：<https://github.com/oschina/mothx/releases>。当前按 `v1.3.107` 验证。
+
+**打包后的 `华华.exe` 会把 runtime 一起打进单文件**，所以发给客户只需要这一个 EXE，不需要另外附带 `runtime` 文件夹。
 
 首次执行默认工作区是 `用户目录\桌面工作区`；顶部会显示完整路径，点一下可以换。华华和熙熙共用这个工作区，但各自的标题、提示和气泡会跟着角色切换。
 
@@ -204,7 +206,7 @@ powershell -ExecutionPolicy Bypass -File .\打包EXE.ps1
 
 会生成 `dist\华华.exe`，并复制一份到项目根目录。单文件打包首次启动会解压到临时目录，通常需要几秒。
 
-> Agent 执行模式需要把 `runtime\mothx.exe` 和 `华华.exe` 放在同一层目录。打包脚本不会把 MothX 运行时塞进单文件；移动程序时请把 `runtime` 文件夹一起带走。
+> `打包EXE.ps1` 会自动把 `runtime\mothx.exe` 打进单文件；成品 `华华.exe` 可以单独发给客户。只有直接从源码启动时，才需要项目根目录下的 `runtime` 文件夹。
 
 ## 常见问题
 

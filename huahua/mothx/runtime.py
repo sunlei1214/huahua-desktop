@@ -155,7 +155,13 @@ def _candidate_paths(config: Config | None = None) -> list[Path]:
     if env_bin:
         candidates.append(Path(env_bin).expanduser())
     names = ["mothx.exe", "mothx"] if os.name == "nt" else ["mothx"]
-    for root in (_app_root(), Path(sys.executable).resolve().parent, Path.cwd()):
+    roots = [_app_root(), Path(sys.executable).resolve().parent, Path.cwd()]
+    # PyInstaller onefile unpacks bundled data under _MEIPASS.  Keep this
+    # explicit so the runtime works even if theme.ROOT changes.
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        roots.insert(0, Path(meipass))
+    for root in roots:
         for name in names:
             candidates.append(root / "runtime" / name)
             candidates.append(root / name)

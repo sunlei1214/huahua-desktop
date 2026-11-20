@@ -6,11 +6,20 @@ if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
     python -m pip install pyinstaller
 }
 
+if (-not (Test-Path 'runtime\mothx.exe')) {
+    Write-Warning '未找到 runtime\mothx.exe：构建出的 EXE 将没有 Agent 运行时。'
+}
+$runtimeData = @()
+if (Test-Path 'runtime\mothx.exe') {
+    $runtimeData = @('--add-data', 'runtime;runtime')
+}
+
 $buildArgs = @(
     '--noconfirm', '--clean', '--onefile', '--windowed', '--noupx',
     '--name', '华华',
     '--icon', 'assets\icon.ico',
-    '--add-data', 'assets;assets',
+    '--add-data', 'assets;assets'
+) + $runtimeData + @(
     '--collect-submodules', 'markdown',
     '--hidden-import', 'fitz',
     '--hidden-import', 'pypdf',
