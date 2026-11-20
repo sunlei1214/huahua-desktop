@@ -263,6 +263,9 @@ class PetWindow(QWidget):
         self.base_state = "idle"
         self._temporary_until = 0.0
         self._busy = False
+        self._busy_state = ""
+        self._drag_return_state = ""
+        self._drag_pending_state: str | None = None
         self._hover = False
         self._dragging = False
         self._drag_origin = QPoint()
@@ -323,7 +326,10 @@ class PetWindow(QWidget):
             self.character = new_character
             self._sleeping = False
             self.bubble.name.setText(theme.character_name(self.character))
-            self._set_state("greet", 1400)
+            if self._busy and not self._dragging:
+                self._set_state(self._busy_state or "thinking")
+            elif not self._dragging:
+                self._set_state("greet", 1400)
         self._apply_size(self.config.get("appearance.size", 260), center=True)
         if self.config.get("appearance.position") is None:
             screen = QGuiApplication.screenAt(self.geometry().center()) or QGuiApplication.primaryScreen()
@@ -370,20 +376,30 @@ class PetWindow(QWidget):
 
     def set_state(self, state: str, revert_ms: int | None = None):
         """Public state switch used by the app (thinking/success/failure...)."""
-        # A running task owns the pet state.  A late greeting, hover, sleep or
-        # notification must not replace the thinking sprite.
-        if self._busy and state not in ("thinking", "tool", "waiting", "success", "failure", "idle"):
-            return
+        # A running task owns the base sprite state.  Greetings, hover, sleep
+        # and notification animations must not replace it.  Dragging is a
+        # transient overlay allowed on top; it restores this base on release.
         if state in ("thinking", "tool", "waiting"):
             self._busy = True
+            self._busy_state = state
         elif state in ("success", "failure"):
             self._busy = False
+            self._busy_state = state
         elif state == "idle":
             self._busy = False
+            self._busy_state = "idle"
+        elif self._busy:
+            return
+        if self._dragging:
+            self._drag_pending_state = state
+            return
         self._set_state(state, revert_ms)
 
     def set_busy(self, busy: bool):
         self._busy = busy
+        self._busy_state = "thinking" if busy else "idle"
+        if self._dragging:
+            return
         if busy:
             self._set_state("thinking")
         elif self.state in ("thinking", "tool", "waiting"):
@@ -436,7 +452,10 @@ class PetWindow(QWidget):
         self._phase += 0.05
         if self._temporary_until and time.time() > self._temporary_until:
             self._temporary_until = 0.0
-            self._set_state("hover" if self._hover else "idle")
+            if not self._dragging:
+                self._set_state(
+                    self._busy_state if self._busy else ("hover" if self._hover else "idle")
+                )
         if self.config.get("appearance.animations", True):
             self.update()
 
@@ -593,8 +612,11 @@ class PetWindow(QWidget):
             gp = e.globalPosition().toPoint()
             if not self._dragging and (gp - self._press_pos).manhattanLength() > 5:
                 self._dragging = True
-                if not self._busy:
-                    self._set_state("drag")
+                self._drag_pending_state = None
+                self._drag_return_state = (
+                    self._busy_state if self._busy or self._busy_state in ("success", "failure") else ""
+                )
+                self._set_state("drag")
             if self._dragging:
                 self.move(self._win_origin + (gp - self._drag_origin))
                 self.bubble.hide()
@@ -606,8 +628,12 @@ class PetWindow(QWidget):
         if self._dragging:
             self._dragging = False
             self._clamp_to_screen()
-            if not self._busy and self.state not in ("success", "failure"):
-                self._set_state("idle")
+            target = self._drag_pending_state or self._drag_return_state
+            if not target:
+                target = "hover" if self._hover else "idle"
+            self._drag_pending_state = None
+            self._drag_return_state = ""
+            self._set_state(target)
             self.config.set("appearance.position", [self.x(), self.y()])
             self.config.save()
             self.moved.emit()
