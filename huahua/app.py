@@ -84,6 +84,7 @@ class HuaHuaApp(QObject):
         self.agent.minimized_changed.connect(self._agent_minimized)
         self.agent.choice_requested.connect(self._agent_choice_requested)
         self.agent.choice_resolved.connect(self._hide_task_bubbles)
+        self.agent.task_finished.connect(self._agent_task_finished)
         self.thinking_bubble.activated.connect(self.open_agent)
 
     @property
@@ -266,6 +267,15 @@ class HuaHuaApp(QObject):
                 self._hide_task_bubbles()
             elif self.agent.pending_choice:
                 self._hide_thinking_bubble()
+
+    def _agent_task_finished(self, reason: str):
+        if reason == "cancelled":
+            return
+        if self.settings_dialog is not None and self.settings_dialog.isVisible():
+            return
+        # Finished work should come back to the task dialog with its artifact
+        # list, even if the user minimized it to the pet.
+        self.open_agent()
 
     def _agent_choice_requested(self, data: dict):
         if self.agent.is_minimized():

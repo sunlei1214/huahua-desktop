@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -119,6 +120,58 @@ class AgentComposerEdit(QPlainTextEdit):
             event.acceptProposedAction()
             return
         super().dropEvent(event)
+
+
+# ----------------------------------------------------------------------
+class ArtifactsCard(QFrame):
+    """Files created or changed by the last task, with direct open actions."""
+
+    def __init__(self, workspace: Path, files: list[Path], parent=None):
+        super().__init__(parent)
+        self.workspace = workspace
+        self.files = files
+        self.setObjectName("ArtifactsCard")
+        self.setStyleSheet(
+            f"QFrame#ArtifactsCard{{background:#FFF9F5;border:1px solid #EFD5C7;"
+            f"border-radius:14px;}}"
+        )
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(5)
+        title = QLabel("本次任务产物")
+        title.setFont(font(10, QFont.Weight.Bold))
+        title.setStyleSheet(f"color:{PEACH_DEEP};")
+        lay.addWidget(title)
+        sub = QLabel(f"工作区 · {workspace}")
+        sub.setObjectName("Tiny")
+        sub.setWordWrap(True)
+        sub.setToolTip(str(workspace))
+        lay.addWidget(sub)
+        for path in files[:8]:
+            try:
+                rel = path.relative_to(workspace)
+            except ValueError:
+                rel = path
+            b = QPushButton("📄  " + str(rel))
+            b.setObjectName("Chip")
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setToolTip(str(path))
+            b.clicked.connect(lambda _=False, p=path: QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))))
+            lay.addWidget(b)
+        if len(files) > 8:
+            more = QLabel(f"还有 {len(files) - 8} 个文件，打开工作区查看")
+            more.setObjectName("Tiny")
+            lay.addWidget(more)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        open_ws = QPushButton("打开工作区")
+        open_ws.setObjectName("Ghost")
+        open_ws.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.workspace)))
+        )
+        row.addWidget(open_ws)
+        row.addStretch(1)
+        lay.addLayout(row)
 
 
 # ----------------------------------------------------------------------
@@ -489,6 +542,12 @@ class AgentRunView(QFrame):
             self.extra_host.show()
         self._plan.set_entries(entries)
 
+    def add_artifacts(self, workspace: Path, files: list[Path]):
+        card = ArtifactsCard(workspace, files)
+        self.extra.addWidget(card)
+        self.extra_host.show()
+        self._resize()
+
     def add_approval(self, data: dict[str, Any], on_decision: Callable[[str], None]) -> ApprovalCard:
         card = ApprovalCard(data)
         card.decided.connect(on_decision)
@@ -516,6 +575,7 @@ class AgentWindow(QWidget):
     minimized_changed = Signal(bool)
     choice_requested = Signal(dict)
     choice_resolved = Signal()
+    task_finished = Signal(str)
     hidden = Signal()
 
     def __init__(self, config: Config):
@@ -530,6 +590,8 @@ class AgentWindow(QWidget):
         self._minimized = False
         self._last_pet_state = ""
         self._task_token = 0
+        self._task_started_at = 0.0
+        self._task_workspace = ""
         self._pending_choice: dict[str, Any] | None = None
         self._header_drag: QPoint | None = None
         self._header_origin: QPoint | None = None
@@ -638,6 +700,13 @@ class AgentWindow(QWidget):
         self.change_ws_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.change_ws_btn.clicked.connect(self.choose_workspace)
         ws_row.addWidget(self.change_ws_btn)
+        self.open_ws_btn = QPushButton("打开")
+        self.open_ws_btn.setObjectName("Ghost")
+        self.open_ws_btn.setFixedSize(46, 30)
+        self.open_ws_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_ws_btn.setToolTip("在资源管理器中打开工作区")
+        self.open_ws_btn.clicked.connect(self.open_workspace)
+        ws_row.addWidget(self.open_ws_btn)
         cl.addLayout(ws_row)
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -862,6 +931,10 @@ class AgentWindow(QWidget):
         self._refresh_workspace()
         return p
 
+    def open_workspace(self):
+        p = self._workspace()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+
     def choose_workspace(self):
         start = str(self._workspace())
         d = QFileDialog.getExistingDirectory(self, "选择工作区", start)
@@ -938,6 +1011,8 @@ class AgentWindow(QWidget):
         if self.attachments:
             text = text
         paths = list(self.attachments)
+        self._task_started_at = time.time()
+        self._task_workspace = str(ws)
         self.edit.clear()
         self.attachments = []
         self._rebuild_attachments()
@@ -1232,6 +1307,50 @@ class AgentWindow(QWidget):
         if self._run:
             self._run.set_status("继续执行…" if option_id else "已拒绝", MUTED)
 
+    def _recent_task_files(self) -> list[Path]:
+        if not self._task_workspace:
+            return []
+        root = Path(self._task_workspace)
+        if not root.exists():
+            return []
+        since = max(0.0, self._task_started_at - 5)
+        skip_dirs = {
+            ".git", ".mothx", "node_modules", "__pycache__", "缓存",
+            "build", "dist", ".venv", "venv", "runtime",
+        }
+        found: list[Path] = []
+        try:
+            for base, dirs, names in os.walk(root):
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in skip_dirs and not d.startswith(".")
+                ]
+                for name in names:
+                    if name.startswith("~$"):
+                        continue
+                    p = Path(base) / name
+                    try:
+                        if p.is_file() and p.stat().st_mtime >= since:
+                            found.append(p)
+                    except OSError:
+                        continue
+                    if len(found) >= 40:
+                        break
+                if len(found) >= 40:
+                    break
+        except OSError:
+            pass
+        found.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return found
+
+    def _show_artifacts(self):
+        if not self._run or not self._task_workspace:
+            return
+        files = self._recent_task_files()
+        if files:
+            self._run.add_artifacts(Path(self._task_workspace), files)
+            self._scroll_bottom()
+
     def _on_run_finished(self, reason: str):
         if self._finalized:
             return
@@ -1245,6 +1364,9 @@ class AgentWindow(QWidget):
         self._end_busy()
         self._pending_choice = None
         self.choice_resolved.emit()
+        if reason != "cancelled":
+            self._show_artifacts()
+            self.task_finished.emit(reason)
         self._pet("success" if reason != "cancelled" else "idle")
         if reason != "cancelled":
             self.notify_requested.emit(
@@ -1271,6 +1393,7 @@ class AgentWindow(QWidget):
         self.status_label.setStyleSheet(f"color:{DANGER};font-size:10px;")
         self._pet("failure")
         self._finalized = True
+        self.task_finished.emit("error")
         self.notify_requested.emit("任务没跑通", message[:50], "", "agent")
         self._schedule_pet_idle()
         self._scroll_bottom()
