@@ -688,11 +688,15 @@ class AgentWindow(QWidget):
         cl.setSpacing(6)
         ws_row = QHBoxLayout()
         ws_row.setSpacing(6)
-        self.workspace_btn = QPushButton("工作区 · 未选择")
-        self.workspace_btn.setObjectName("Chip")
-        self.workspace_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.workspace_btn.setToolTip("点击更改工作区（只在这个文件夹内读写）")
-        self.workspace_btn.clicked.connect(self.choose_workspace)
+        self.workspace_btn = QLabel("工作区 · 未选择")
+        self.workspace_btn.setObjectName("WorkspacePath")
+        self.workspace_btn.setMinimumHeight(30)
+        self.workspace_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.workspace_btn.setStyleSheet(
+            f"QLabel#WorkspacePath{{background:white;border:1px solid {LINE};"
+            f"border-radius:14px;padding:6px 11px;color:{INK_SOFT};font-size:12px;}}"
+        )
+        self.workspace_btn.setToolTip("工作区只读显示；点右侧「打开」查看文件夹")
         ws_row.addWidget(self.workspace_btn, 1)
         self.change_ws_btn = QPushButton("更改")
         self.change_ws_btn.setObjectName("Ghost")
@@ -914,7 +918,7 @@ class AgentWindow(QWidget):
         raw = str(self.config.get("mothx.workspace", "") or "").strip()
         p = workspace_path(raw or None)
         self.workspace_btn.setText(f"工作区 · {p}")
-        self.workspace_btn.setToolTip(f"{p}\n点击更改（只在这个文件夹内读写）")
+        self.workspace_btn.setToolTip(f"{p}\n只读显示；点右侧「打开」查看文件夹")
         self.empty_art.setPixmap(
             theme.pixmap("idle", self.character).scaled(
                 150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
