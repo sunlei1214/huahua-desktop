@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -592,6 +593,7 @@ class AgentWindow(QWidget):
         self._task_token = 0
         self._task_started_at = 0.0
         self._task_workspace = ""
+        self._task_attachment_dir = ""
         self._pending_choice: dict[str, Any] | None = None
         self._header_drag: QPoint | None = None
         self._header_origin: QPoint | None = None
@@ -1004,6 +1006,34 @@ class AgentWindow(QWidget):
         self.reload_runtime()
 
     # ------------------------------------------------------------------
+    def _stage_attachments(self, workspace: Path, paths: list[Path]) -> tuple[list[Path], Path | None]:
+        """Copy dropped files inside the workspace so MothX can read them."""
+        if not paths:
+            return [], None
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        folder = workspace / f"任务资料_{stamp}"
+        suffix = 2
+        while folder.exists():
+            folder = workspace / f"任务资料_{stamp}_{suffix}"
+            suffix += 1
+        folder.mkdir(parents=True, exist_ok=False)
+        copies: list[Path] = []
+        try:
+            for source in paths:
+                name = source.name
+                target = folder / name
+                stem, ext = source.stem, source.suffix
+                n = 2
+                while target.exists():
+                    target = folder / f"{stem}_{n}{ext}"
+                    n += 1
+                shutil.copy2(source, target)
+                copies.append(target)
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        return copies, folder
+
     def send(self):
         if self._busy:
             self.show_toast(f"{theme.character_name(self.character)}还在执行，先等一下或点停止")
@@ -1015,6 +1045,15 @@ class AgentWindow(QWidget):
         if self.attachments:
             text = text
         paths = list(self.attachments)
+        staged_dir: Path | None = None
+        if paths:
+            try:
+                paths, staged_dir = self._stage_attachments(ws, paths)
+            except Exception as e:
+                self.show_toast(f"复制任务资料失败：{e}", 4200)
+                return
+            self.show_toast(f"资料已复制到 {staged_dir.name}", 2600)
+        self._task_attachment_dir = str(staged_dir) if staged_dir else ""
         self._task_started_at = time.time()
         self._task_workspace = str(ws)
         self.edit.clear()
@@ -1318,6 +1357,7 @@ class AgentWindow(QWidget):
         if not root.exists():
             return []
         since = max(0.0, self._task_started_at - 5)
+        attachment_root = Path(self._task_attachment_dir) if self._task_attachment_dir else None
         skip_dirs = {
             ".git", ".mothx", "node_modules", "__pycache__", "缓存",
             "build", "dist", ".venv", "venv", "runtime",
@@ -1333,6 +1373,12 @@ class AgentWindow(QWidget):
                     if name.startswith("~$"):
                         continue
                     p = Path(base) / name
+                    if attachment_root is not None:
+                        try:
+                            p.relative_to(attachment_root)
+                            continue
+                        except ValueError:
+                            pass
                     try:
                         if p.is_file() and p.stat().st_mtime >= since:
                             found.append(p)
