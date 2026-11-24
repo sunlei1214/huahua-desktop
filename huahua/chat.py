@@ -181,6 +181,9 @@ class ChatWindow(QWidget):
         self.character = config.character
         self.session = history.current()
         self.mode = "chat"
+        # Chat, image and video each keep their own conversation.  Entering a
+        # generation mode therefore never inherits a chat transcript.
+        self._mode_sessions = {"chat": self.session["id"], "image": "", "video": ""}
         self.attachments: list[Path] = []
         self._bubbles: dict[str, MessageBubble] = {}
         self._workers: list[Any] = []
@@ -478,7 +481,31 @@ class ChatWindow(QWidget):
     def set_mode(self, mode: str):
         if mode not in MODES:
             mode = "chat"
-        self.mode = mode
+        old = self.mode
+        if mode != old:
+            if self._busy:
+                self.show_toast(f"等{theme.character_name(self.character)}做完手上的事再切换")
+                for key, b in self.tab_buttons.items():
+                    b.setChecked(key == old)
+                return
+            self._mode_sessions[old] = self.session.get("id", "")
+            target = self._mode_sessions.get(mode, "")
+            existing = self.history.get(target) if target else None
+            if existing is not None:
+                self.session = self.history.switch(target) or existing
+            else:
+                self.session = self.history.new_session()
+                self._mode_sessions[mode] = self.session["id"]
+            self.config.set("ui.last_session", self.session["id"])
+            self.config.save()
+            self.attachments = []
+            self.edit.clear()
+            self._rebuild_attachments()
+            self.mode = mode
+            self._render_session()
+            self.title_changed.emit(self.session.get("title", ""))
+        else:
+            self.mode = mode
         self._set_mode_ui()
         if mode == "image":
             self.empty.set_pet("tool")
@@ -978,6 +1005,7 @@ class ChatWindow(QWidget):
             self.show_toast(f"等{theme.character_name(self.character)}做完手上的事再开新对话")
             return
         self.session = self.history.new_session()
+        self._mode_sessions[self.mode] = self.session["id"]
         self.config.set("ui.last_session", self.session["id"])
         self.config.save()
         self._render_session()
@@ -1013,6 +1041,7 @@ class ChatWindow(QWidget):
         s = self.history.switch(sid)
         if s:
             self.session = s
+            self._mode_sessions[self.mode] = sid
             self.config.set("ui.last_session", sid)
             self.config.save()
             self._render_session()
@@ -1156,8 +1185,8 @@ class ChatWindow(QWidget):
 
     def handle_dropped(self, paths: list[str]):
         self.show_panel()
-        self.set_mode("chat")
-        self.add_paths(paths, auto_analyze=True)
+        self.add_paths(paths)
+        self.edit.setFocus()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
