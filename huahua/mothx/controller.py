@@ -5,6 +5,7 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Signal
@@ -242,8 +243,19 @@ class AgentController(QObject):
                     )
                 else:
                     mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+                    resolved = path.resolve()
+                    # MothX resolves resource URIs against the workspace cwd.
+                    # On Windows file:///C:/... is not treated as an absolute
+                    # filepath by filepath.IsAbs, so use a workspace-relative
+                    # quoted path for files inside the workspace.
+                    uri = resolved.as_uri()
+                    try:
+                        rel = resolved.relative_to(Path(self.cwd).resolve()).as_posix()
+                        uri = quote(rel, safe="/")
+                    except ValueError:
+                        pass
                     blocks.append(
-                        {"type": "resource_link", "name": path.name, "uri": path.resolve().as_uri(), "mimeType": mime}
+                        {"type": "resource_link", "name": path.name, "uri": uri, "mimeType": mime}
                     )
             except Exception:
                 pass
