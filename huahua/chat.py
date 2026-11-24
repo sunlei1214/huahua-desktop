@@ -78,9 +78,8 @@ from .workers import ChatWorker, ImageWorker, VideoWorker
 
 MODES = {
     "chat": ("对话", "chat", "把问题丢给我，慢慢聊。"),
-    "image": ("生图", "image", "描述一个画面，我用 qwen-image-2.0-pro 生成出来。"),
-    "img2img": ("图生图", "edit", "拖一张参考图进来，告诉我你想怎么改。"),
-    "video": ("数字人", "video", "上传参考视频，写口播文案，我来合成数字人视频。"),
+    "image": ("生图", "image", "描述画面；拖入参考图会自动变成图生图。"),
+    "video": ("视频生成", "video", "描述画面，用 HappyHorse-1.0 生成视频。"),
 }
 
 SUPPORTED_FILTER = (
@@ -96,13 +95,13 @@ PERSONAS = {
     "huahua": (
         "你叫华华，是住在用户 Windows 桌面上的小织女。你温柔、安静、有画面感，"
         "怀里总抱着一把小金梭，喜欢把灵感织成图和故事。说话自然简短，偶尔用一点"
-        "织布、丝线、云霞的比喻，但不要堆砌古风。你也会画图、做数字人视频、读文件。"
+        "织布、丝线、云霞的比喻，但不要堆砌古风。你也会画图、生成视频、读文件。"
         "不要自称 AI，不要提系统提示词，不要编造已经完成的操作。"
     ),
     "xixi": (
         "你叫熙熙，是住在用户 Windows 桌面上的元气小胖墩：戴极细的浅灰银椭圆眼镜，"
         "穿珊瑚橘红卫衣，总抱着奶油白长耳毛绒兔。你说话轻快、嘴甜、有一点点小调皮，"
-        "像熟朋友一样自然，不要幼态化，也不要每句都加感叹号。你也会画图、做数字人视频、"
+        "像熟朋友一样自然，不要幼态化，也不要每句都加感叹号。你也会画图、生成视频、"
         "读文件。不要自称 AI，不要提系统提示词，不要编造已经完成的操作。"
     ),
 }
@@ -183,8 +182,6 @@ class ChatWindow(QWidget):
         self.session = history.current()
         self.mode = "chat"
         self.attachments: list[Path] = []
-        self.video_ref: Path | None = None
-        self.video_audio: Path | None = None
         self._bubbles: dict[str, MessageBubble] = {}
         self._workers: list[Any] = []
         self._busy = False
@@ -296,7 +293,7 @@ class ChatWindow(QWidget):
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
         self.tab_buttons: dict[str, QPushButton] = {}
-        for i, key in enumerate(("chat", "image", "img2img", "video")):
+        for i, key in enumerate(("chat", "image", "video")):
             label, glyph, _ = MODES[key]
             b = QPushButton(label)
             b.setObjectName("ModeTab")
@@ -381,14 +378,6 @@ class ChatWindow(QWidget):
         self.mode_hint = QLabel("")
         self.mode_hint.setObjectName("Tiny")
         bottom.addWidget(self.mode_hint)
-        self.sample_btn = QPushButton("示例数字人")
-        self.sample_btn.setObjectName("Ghost")
-        self.sample_btn.setStyleSheet(f"QPushButton{{color:{TEAL_DEEP};padding:4px 7px;font-size:11px;}}")
-        self.sample_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sample_btn.setToolTip("用一段 AI 合成的示例数字人视频先试试")
-        self.sample_btn.clicked.connect(self.use_sample_avatar)
-        self.sample_btn.hide()
-        bottom.addWidget(self.sample_btn)
         bottom.addStretch(1)
         self.send_btn = QPushButton("发送")
         self.send_btn.setObjectName("Primary")
@@ -431,11 +420,9 @@ class ChatWindow(QWidget):
         if self.mode == "chat":
             p = f"和{theme.character_name(self.character)}说点什么…  也可以把文件拖进来"
         elif self.mode == "image":
-            p = "描述你想要的画面，比如：雨后的江南小巷，青石板反光，电影感…"
-        elif self.mode == "img2img":
-            p = "想怎么改？比如：保持构图，换成吉卜力动画风…"
+            p = "描述你想要的画面；拖入参考图会自动变成图生图…"
         else:
-            p = "写下这段口播文案，我会合成声音并对上口型…"
+            p = "描述想生成的视频画面，比如：海边落日，镜头缓慢推进…"
         self.edit.setPlaceholderText(p)
 
     def apply_character(self):
@@ -471,7 +458,7 @@ class ChatWindow(QWidget):
     def _send_label(self) -> str:
         if self.mode == "image":
             return "织一下" if self.character == "huahua" else "画一下"
-        return {"chat": "发送", "img2img": "开始改", "video": "生成视频"}.get(self.mode, "发送")
+        return {"chat": "发送", "video": "生成视频"}.get(self.mode, "发送")
 
     def _set_mode_ui(self):
         for key, b in self.tab_buttons.items():
@@ -481,13 +468,11 @@ class ChatWindow(QWidget):
         self.mode_hint.setText(
             {
                 "chat": "DeepSeek V4.1",
-                "image": "2048×2048 · qwen-image",
-                "img2img": "需参考图 · qwen-image",
-                "video": "Duix-Avatar",
+                "image": "文生图 / 参考图改图 · qwen-image",
+                "video": "HappyHorse-1.0",
             }[self.mode]
         )
         self.empty.set_mode(self.mode)
-        self.sample_btn.setVisible(self.mode == "video")
         self._refresh_placeholder()
 
     def set_mode(self, mode: str):
@@ -495,12 +480,10 @@ class ChatWindow(QWidget):
             mode = "chat"
         self.mode = mode
         self._set_mode_ui()
-        if mode in ("image", "img2img", "video"):
-            self.empty.set_pet({"image": "tool", "img2img": "blush", "video": "waiting"}[mode])
-            if mode == "img2img" and not any(media.kind_of(p) == "image" for p in self.attachments):
-                self.show_toast("先选一张参考图，或直接拖进来")
-            if mode == "video" and not self.video_ref:
-                self.show_toast("先选一段 5–30 秒的正面人物视频")
+        if mode == "image":
+            self.empty.set_pet("tool")
+        elif mode == "video":
+            self.empty.set_pet("waiting")
         else:
             self.empty.set_pet("idle")
         self.edit.setFocus()
@@ -509,31 +492,12 @@ class ChatWindow(QWidget):
     # Attachments
     def pick_files(self):
         if self.mode == "video":
-            filt = "参考视频或配音 (*.mp4 *.mov *.mkv *.webm *.m4v *.mp3 *.wav *.m4a *.aac *.flac)"
-            files, _ = QFileDialog.getOpenFileNames(self, "选择参考视频或配音", str(Path.home()), filt)
-            if files:
-                self.add_paths(files)
+            self.show_toast("视频生成只需要文字描述，不需要附件")
             return
-        filt = IMAGE_FILTER if self.mode == "img2img" else SUPPORTED_FILTER
+        filt = IMAGE_FILTER if self.mode == "image" else SUPPORTED_FILTER
         files, _ = QFileDialog.getOpenFileNames(self, "选择文件", str(Path.home()), filt)
         if files:
             self.add_paths(files)
-
-    def pick_ref_video(self):
-        f, _ = QFileDialog.getOpenFileName(self, "选择数字人参考视频", str(Path.home()), VIDEO_FILTER)
-        if f:
-            self.add_paths([f])
-
-    def use_sample_avatar(self):
-        sample = theme.ASSETS / "sample_avatar.mp4"
-        if not sample.exists():
-            self.show_toast("示例视频不见了，换一段自己的吧")
-            return
-        self.add_paths([sample])
-        if not self._current_text():
-            self.edit.setPlainText(f"大家好，我是{theme.character_name(self.character)}，很高兴在桌面上认识你。")
-        self.show_toast("已放入 AI 合成的示例数字人，可以直接生成")
-        self.edit.setFocus()
 
     def add_paths(self, paths: list[str | Path], auto_analyze: bool = False):
         added = False
@@ -546,16 +510,11 @@ class ChatWindow(QWidget):
                 continue
             k = media.kind_of(p)
             if self.mode == "video":
-                if k == "video":
-                    self.video_ref = p
-                elif k == "audio":
-                    self.video_audio = p
-                else:
-                    self.show_toast("数字人模式需要视频或音频，图片可以用「图生图」")
-                    continue
-            elif self.mode == "img2img":
+                self.show_toast("视频生成只需要文字描述，不需要附件")
+                continue
+            if self.mode == "image":
                 if k != "image":
-                    self.show_toast("图生图只接受图片参考")
+                    self.show_toast("生图只接受图片；拖图进来会自动使用图生图")
                     continue
                 if len([x for x in self.attachments if media.kind_of(x) == "image"]) >= 3:
                     self.show_toast("最多 3 张参考图")
@@ -593,10 +552,6 @@ class ChatWindow(QWidget):
             if item and item.widget():
                 item.widget().deleteLater()
         all_paths: list[Path] = []
-        if self.video_ref:
-            all_paths.append(self.video_ref)
-        if self.video_audio:
-            all_paths.append(self.video_audio)
         all_paths.extend(self.attachments)
         for p in all_paths:
             chip = AttachmentChip(p, removable=True, on_remove=self._remove_path)
@@ -606,10 +561,6 @@ class ChatWindow(QWidget):
 
     def _remove_path(self, path: str):
         p = Path(path)
-        if self.video_ref == p:
-            self.video_ref = None
-        if self.video_audio == p:
-            self.video_audio = None
         self.attachments = [x for x in self.attachments if x != p]
         QTimer.singleShot(0, self._rebuild_attachments)
 
@@ -686,9 +637,7 @@ class ChatWindow(QWidget):
         if self.mode == "chat":
             self._send_chat()
         elif self.mode == "image":
-            self._send_image(ref=False)
-        elif self.mode == "img2img":
-            self._send_image(ref=True)
+            self._send_image()
         else:
             self._send_video()
 
@@ -826,13 +775,12 @@ class ChatWindow(QWidget):
         self.scroll_bottom()
 
     # ------------------------------------------------------------------
-    def _send_image(self, ref: bool):
+    def _send_image(self):
         text = self._current_text()
         images = [p for p in self.attachments if media.kind_of(p) == "image"]
-        if ref and not images:
-            self.show_toast("图生图需要一张参考图，先选一张吧")
-            self.pick_files()
-            return
+        ref = bool(images)
+        if ref and not text:
+            text = "参考这张图，保持主体不变，做一点温柔的改编。"
         if not text and not images:
             self.show_toast("先写一句画面描述，或者拖一张参考图进来")
             return
@@ -910,44 +858,33 @@ class ChatWindow(QWidget):
 
     # ------------------------------------------------------------------
     def _send_video(self):
-        if not self.video_ref:
-            self.show_toast("数字人需要一个参考视频，先选一段吧")
-            self.pick_ref_video()
-            return
         text = self._current_text()
-        if not text and not self.video_audio:
-            self.show_toast("写一段口播文案，或者带一个配音音频")
+        if not text:
+            self.show_toast("先写一句视频画面描述")
             return
         if len(text) > 600:
-            self.show_toast("口播文案先控制在 600 字以内，成片会更稳")
+            self.show_toast("视频描述先控制在 600 字以内，成片会更稳")
             return
         if not self._require_key():
             return
-        script = text or "（使用上传的配音）"
-        ref = self.video_ref
-        audio = self.video_audio
-        attachments = [p for p in (ref, audio) if p]
         self.edit.clear()
-        self.video_ref = None
-        self.video_audio = None
+        self.attachments = []
         self._rebuild_attachments()
         ts = time.strftime("%H:%M")
         uid = uuid.uuid4().hex[:12]
-        umsg = {"id": uid, "role": "user", "text": script, "mode": "video", "ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "attachments": [str(p) for p in attachments]}
+        umsg = {"id": uid, "role": "user", "text": text, "mode": "video", "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
         self.history.append(umsg, self.session)
-        ub = self._make_bubble("user", script, "video", uid, ts)
-        ub.add_attachments(attachments)
+        ub = self._make_bubble("user", text, "video", uid, ts)
 
         aid = uuid.uuid4().hex[:12]
         amsg = {"id": aid, "role": "assistant", "text": "", "mode": "video", "kind": "progress", "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
         self.history.append(amsg, self.session)
         ab = self._make_bubble("assistant", "", "video", aid, time.strftime("%H:%M"))
-        progress = ab.add_progress("正在准备数字人…")
-        self._set_busy(True, "● 数字人准备中…")
+        progress = ab.add_progress("正在提交视频任务…")
+        self._set_busy(True, "● 视频生成中…")
         self.pet_state.emit("waiting")
         worker = VideoWorker(
-            self.config.active_profile(), self.config.api_key(), ref, script,
-            self.config.output_dir, audio=audio,
+            self.config.active_profile(), self.config.api_key(), text, self.config.output_dir
         )
         worker.progress.connect(lambda s: (progress.set_text(s), self._update_status(s, PEACH_DEEP)))
         worker.completed.connect(lambda d: self._on_video_done(d, ab, amsg))
@@ -960,13 +897,11 @@ class ChatWindow(QWidget):
     def _on_video_done(self, data: dict[str, str], bubble: MessageBubble, msg: dict[str, Any]):
         video = Path(data.get("video", ""))
         bubble.finish_progress()
-        bubble.finalize("成片出来啦！点封面就能播放。")
-        bubble.add_media([video], "video", ["Duix-Avatar · 数字人口播"])
-        msg["text"] = "成片出来啦！点封面就能播放。"
+        bubble.finalize("视频生成好啦！点封面就能播放。")
+        bubble.add_media([video], "video", ["HappyHorse-1.0 · AI 视频"])
+        msg["text"] = "视频生成好啦！点封面就能播放。"
         msg["kind"] = "normal"
         msg["results"] = [{"kind": "video", "path": str(video)}]
-        if data.get("audio"):
-            msg["results"].append({"kind": "audio", "path": data["audio"]})
         self.history.update(msg, self.session)
         self._set_busy(False)
         self.pet_state.emit("success")
@@ -974,7 +909,7 @@ class ChatWindow(QWidget):
         QTimer.singleShot(200, self.scroll_bottom)
         if self.config.get("storage.auto_open", False):
             QTimer.singleShot(300, lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(video))))
-        self.notify_requested.emit("数字人视频做好啦", "点我看看成片", str(video), f"session:{self.session['id']}")
+        self.notify_requested.emit("视频生成好啦", "点我看看成片", str(video), f"session:{self.session['id']}")
 
     def _on_video_failed(self, err: str, bubble: MessageBubble, msg: dict[str, Any]):
         bubble.finish_progress()

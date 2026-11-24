@@ -311,8 +311,16 @@ class EmptyState(QWidget):
         while self.flow.count():
             item = self.flow.takeAt(0)
             if item and item.widget():
-                item.widget().deleteLater()
+                chip = item.widget()
+                chip.hide()
+                chip.setParent(None)
+                chip.deleteLater()
+        for chip in self._chips:
+            chip.hide()
+            chip.setParent(None)
+            chip.deleteLater()
         self._chips = []
+        self.flow.invalidate()
         if mode == "chat":
             self.title.setText(
                 "在呢，今天想织点什么？" if self.character == "huahua" else "来啦，今天整点什么好玩的？"
@@ -327,7 +335,7 @@ class EmptyState(QWidget):
         elif mode == "image":
             self.title.setText("把脑子里的小画面交给我")
             verb = "织" if self.character == "huahua" else "画"
-            self.sub.setText(f"描述越具体，{verb}出来的图越接近你想象的样子。")
+            self.sub.setText(f"描述越具体，{verb}出来的图越接近你想象的样子；拖入参考图就变成图生图。")
             prompts = [
                 ("一只戴珍珠耳环的橘猫，油画质感", "名画猫"),
                 ("雨后的江南小巷，青石板反光，电影感", "江南"),
@@ -343,18 +351,20 @@ class EmptyState(QWidget):
                 ("给人物加上一顶星星发卡", "加细节"),
             ]
         else:
-            self.title.setText("让照片里的人开口说话")
-            self.sub.setText("选一段 5–30 秒的正面人物视频，写下口播文案；我会合成声音并对上口型。")
+            self.title.setText("把一段想象变成视频")
+            self.sub.setText("写清主体、动作、镜头和氛围，我用 HappyHorse-1.0 生成一段短视频。")
             prompts = [
-                ("用温柔的语气介绍这款桌面小工具", "产品介绍"),
-                ("念一段晚安电台，语速慢一点", "晚安电台"),
-                ("用元气满满的声音说：今天也要加油呀！", "元气"),
+                ("海边落日，镜头缓慢推进，电影感", "落日"),
+                ("一只橘猫在雨后的屋顶上伸懒腰，暖色调", "橘猫"),
+                ("未来城市夜景，霓虹倒映在湿漉漉的街道上", "赛博"),
             ]
         for text, tag in prompts:
             c = Chip(text)
             c.clicked.connect(lambda _=False, t=text, m=mode: self.prompt_clicked.emit(m, t))
             self.flow.addWidget(c)
             self._chips.append(c)
+        self.flow.invalidate()
+        self.chips_host.updateGeometry()
 
     def set_character(self, character: str):
         self.character = theme.character_key(character)

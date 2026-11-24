@@ -55,7 +55,7 @@ def migrate_legacy_data() -> None:
 
 MODEL_CHAT = "DeepSeek-V4.1-Flash-1017"
 MODEL_IMAGE = "qwen-image-2.0-pro"
-MODEL_VIDEO = "Duix-Avatar"
+MODEL_VIDEO = "HappyHorse-1.0"
 MODEL_TTS = "Qwen3-TTS"
 BASE_URL = "https://api.moark.com/v1"
 
@@ -162,6 +162,9 @@ class Config:
             if raw.get("profiles"):
                 merged["profiles"] = raw["profiles"]
                 merged["active_profile"] = raw.get("active_profile") or raw["profiles"][0]["id"]
+            for profile in merged.get("profiles", []):
+                if profile.get("video_model") in (None, "", "Duix-Avatar"):
+                    profile["video_model"] = MODEL_VIDEO
             self.data = merged
         except Exception:
             self.data = default_config()

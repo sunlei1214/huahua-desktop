@@ -118,18 +118,14 @@ class VideoWorker(QThread):
         self,
         profile: dict[str, Any],
         key: str,
-        ref_video: Path,
-        script: str,
+        prompt: str,
         out_dir: Path,
-        audio: Path | None = None,
     ):
         super().__init__()
         self.profile = profile
         self.key = key
-        self.ref_video = Path(ref_video)
-        self.script = script
+        self.prompt = prompt
         self.out_dir = out_dir
-        self.audio = Path(audio) if audio else None
         self.stop_event = threading.Event()
 
     def stop(self) -> None:
@@ -138,15 +134,13 @@ class VideoWorker(QThread):
     def run(self) -> None:
         try:
             client = MoArkClient(self.profile, self.key)
-            video, audio = client.generate_video(
-                self.ref_video,
-                self.script,
+            video = client.generate_text_video(
+                self.prompt,
                 self.out_dir,
-                audio=self.audio,
                 on_progress=self.progress.emit,
                 stop_event=self.stop_event,
             )
-            self.completed.emit({"video": str(video), "audio": str(audio)})
+            self.completed.emit({"video": str(video)})
         except Stopped:
             self.failed.emit("已停止生成。")
         except ApiError as e:

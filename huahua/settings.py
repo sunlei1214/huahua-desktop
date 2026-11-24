@@ -390,7 +390,7 @@ class SettingsDialog(QDialog):
         i = QLabel("")
         i.setPixmap(theme.avatar_pixmap(26))
         tl.addWidget(i)
-        lab = QLabel("对话 DeepSeek-V4.1-Flash-1017 · 生图 qwen-image-2.0-pro · 视频 Duix-Avatar · 配音 Qwen3-TTS")
+        lab = QLabel("对话 DeepSeek-V4.1-Flash-1017 · 生图 qwen-image-2.0-pro · 视频 HappyHorse-1.0")
         lab.setWordWrap(True)
         lab.setStyleSheet(f"color:{TEAL_DEEP};font-size:11px;")
         tl.addWidget(lab, 1)
@@ -451,8 +451,8 @@ class SettingsDialog(QDialog):
         self.tts_model = QLineEdit()
         cl2.addWidget(self._row("对话模型", self.chat_model))
         cl2.addWidget(self._row("生图模型", self.image_model, "支持文生图与图生图（参考图最多 3 张），云端输出 2048×2048。"))
-        cl2.addWidget(self._row("视频模型", self.video_model, "Duix-Avatar：需要一段参考人物视频 + 文案或配音。"))
-        cl2.addWidget(self._row("配音模型", self.tts_model, "把口播文案合成为声音，再交给 Duix 对口型。"))
+        cl2.addWidget(self._row("视频模型", self.video_model, "HappyHorse-1.0：输入画面描述，生成一段短视频。"))
+        cl2.addWidget(self._row("配音模型", self.tts_model, "数字人模式的遗留配音配置，当前视频生成不再使用。"))
         self.speaker = QComboBox()
         self.speaker.addItems(["Vivian", "Serena", "Dylan", "Eric", "Ryan", "Kiki"])
         self.speaker.setEditable(True)
@@ -714,7 +714,7 @@ class SettingsDialog(QDialog):
         name.setFont(font(15, QFont.Weight.Bold))
         v = QLabel(f"版本 {__version__}  ·  为 Windows 桌面做的 AI 小工具")
         v.setObjectName("Hint")
-        brief = QLabel("华华温柔、熙熙元气。聊天、生图、图生图、数字人视频、文件识别、截图提问，还有会眨眼会散步的小桌宠。")
+        brief = QLabel("华华温柔、熙熙元气。聊天、生图 / 图生图、视频生成、文件识别、截图提问，还有会眨眼会散步的小桌宠。")
         brief.setWordWrap(True)
         brief.setStyleSheet(f"color:{INK_SOFT};font-size:11px;")
         col.addWidget(name)
@@ -729,7 +729,7 @@ class SettingsDialog(QDialog):
         for model, label, desc in (
             ("DeepSeek-V4.1-Flash-1017", "对话 / 图片理解", "DeepSeek 最新 Flash 模型，支持图文输入"),
             ("qwen-image-2.0-pro", "文生图 / 图生图", "千问图像 2.0 Pro，文字渲染与真实质感"),
-            ("Duix-Avatar", "数字人视频", "音频 + 参考视频生成口型同步视频"),
+            ("HappyHorse-1.0", "视频生成", "文字描述生成 AI 短视频"),
             ("Qwen3-TTS", "配音", "把口播文案合成为自然语音"),
         ):
             row = QWidget()
@@ -770,7 +770,7 @@ class SettingsDialog(QDialog):
         for text, url in (
             ("模力方舟 · 模型广场与令牌", "https://moark.com/serverless-api"),
             ("模力方舟 · API 文档", "https://moark.com/docs/openapi/v1"),
-            ("Duix-Avatar · 开源项目", "https://github.com/duixcom/Duix-Avatar"),
+            ("HappyHorse-1.0 · 模力方舟模型", "https://moark.com/models/HappyHorse-1.0"),
         ):
             b = QPushButton(text)
             b.setObjectName("Ghost")
@@ -870,7 +870,7 @@ class SettingsDialog(QDialog):
         p["base_url"] = self.base_url.text().strip() or "https://api.moark.com/v1"
         p["chat_model"] = self.chat_model.text().strip() or "DeepSeek-V4.1-Flash-1017"
         p["image_model"] = self.image_model.text().strip() or "qwen-image-2.0-pro"
-        p["video_model"] = self.video_model.text().strip() or "Duix-Avatar"
+        p["video_model"] = self.video_model.text().strip() or "HappyHorse-1.0"
         p["tts_model"] = self.tts_model.text().strip() or "Qwen3-TTS"
         p["tts_speaker"] = self.speaker.currentText().strip() or "Vivian"
         p["tts_instruction"] = self.tts_instruction.text().strip()

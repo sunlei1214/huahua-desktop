@@ -296,6 +296,55 @@ class MoArkClient:
         media.download(url, p, timeout=180)
         return p
 
+    def generate_text_video(
+        self,
+        prompt: str,
+        out_dir: Path,
+        on_progress: Callable[[str], None] | None = None,
+        stop_event: threading.Event | None = None,
+    ) -> Path:
+        prompt = prompt.strip()
+        if not prompt:
+            raise ApiError("要先写一段画面描述，才能生成视频。")
+        if on_progress:
+            on_progress("正在提交视频任务…")
+        payload = {
+            "model": self.profile.get("video_model", "HappyHorse-1.0"),
+            "prompt": prompt[:600],
+        }
+        tid = self.submit_async("async/videos/generations", payload, timeout=90)
+        started = time.time()
+        last_tick = 0.0
+
+        def report(status: str, _payload: dict[str, Any]):
+            nonlocal last_tick
+            now = time.time()
+            if on_progress and (now - last_tick > 1.2 or status in ("success", "failed")):
+                elapsed = int(now - started)
+                label = "排队中" if status in ("waiting", "queued") else "正在生成视频"
+                on_progress(f"{label}… {elapsed // 60:02d}:{elapsed % 60:02d}")
+                last_tick = now
+
+        task = self.poll_task(
+            str(tid), self.video_timeout, on_progress=report, stop_event=stop_event
+        )
+        url = None
+        output = task.get("output")
+        if isinstance(output, dict):
+            url = output.get("file_url") or output.get("video_url")
+        if not url:
+            url = media.recursive_find_url(task.get("output"), (".mp4", ".mov", ".webm"))
+        if not url:
+            url = media.recursive_find_url(task, (".mp4", ".mov", ".webm"))
+        if not url:
+            raise ApiError("视频任务完成，但没有找到视频地址。")
+        if on_progress:
+            on_progress("正在下载成片…")
+        folder = out_dir / "视频"
+        p = media.unique_path(folder, "桌面视频", ".mp4")
+        media.download(url, p, timeout=600)
+        return p
+
     def generate_video(
         self,
         ref_video: Path,
